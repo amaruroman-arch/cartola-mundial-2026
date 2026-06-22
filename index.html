@@ -527,10 +527,15 @@ function CampeonView({ user, isAdmin, champ, onVote, onReal }) {
         e('option',{value:''},'— Por definir —'),...ALL_TEAMS.map(t=>e('option',{key:t,value:t},t)))
     ),
     !isAdmin&&real&&e('div',{style:{background:'#0F1C3F',color:'#F59E0B',borderRadius:8,padding:'8px 13px',marginBottom:10,fontFamily:'Georgia,serif',fontSize:13}},'🏆 Campeón: '+real),
-    e('div',{className:'tbl'},...PLAYERS.map(p=>{const v=champ.votes?.[p]||'',isMe=p===user&&!isAdmin,ok=real&&v&&v.toUpperCase()===real.toUpperCase();return e('div',{key:p,className:'chr'},
+    e('div',{className:'tbl'},...PLAYERS.map(p=>{const v=champ.votes?.[p]||'',ok=real&&v&&v.toUpperCase()===real.toUpperCase();return e('div',{key:p,className:'chr'},
       e('div',{style:{fontWeight:500,fontSize:13,color:PC[p],minWidth:76}},p),
-      isMe?e('select',{value:v,onChange:ev=>onVote(ev.target.value),style:{padding:'5px 10px',borderRadius:6,border:'1px solid #e2e8f0',background:'#f1f5f9',color:'#1e293b',fontSize:13,fontFamily:'inherit',flex:1}},e('option',{value:''},'— Elige tu campeón —'),...ALL_TEAMS.map(t=>e('option',{key:t,value:t},t))):
-      e('div',{style:{fontWeight:500,fontSize:13,color:ok?'#16A34A':'#1e293b'}},v||'—',real&&v&&e('span',{style:{marginLeft:4,fontWeight:500}},ok?'✓ acertó':'✗'))
+      v
+        ? e('div',{style:{display:'flex',alignItems:'center',gap:6,flex:1}},
+            e('div',{style:{fontWeight:500,fontSize:13,color:ok?'#16A34A':'#1e293b'}},v),
+            real&&e('span',{style:{fontWeight:500,fontSize:12}},ok?'✓ acertó':'✗'),
+            e('span',{style:{fontSize:11,color:'#94a3b8'}},'🔒')
+          )
+        : e('div',{style:{fontSize:12,color:'#94a3b8',fontStyle:'italic'}},'— sin voto —')
     );})),
     e('div',{className:'hint'},'El campeón no suma puntos — solo muestra quién acertó.')
   );
