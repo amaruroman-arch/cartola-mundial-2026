@@ -102,30 +102,57 @@ function getBestThirds(fR) {
     .sort((a,b) => b.pts-a.pts || b.dg-a.dg || b.gf-a.gf || a.tj-b.tj);
 }
 
-function resolveRef(ref, fR, eR, b3map) {
+// Tabla FIFA: dado el conjunto de grupos de los 8 mejores terceros (ordenados alfabéticamente),
+// indica qué tercero (por índice 0-7 en el ranking) va a qué partido (por ID).
+// Los 8 slots "Mejor 3°" en ELIM son los partidos: 74,77,79,80,81,82,85,87
+// La asignación oficial FIFA Mundial 2026 (32 equipos, 12 grupos, 8 mejores terceros):
+// Los slots se llenan en orden de fecha del partido con el ranking de mejores terceros.
+// Asignamos posicionalmente: el mejor 3° va al primer partido con "Mejor 3°" en fecha,
+// el 2° al siguiente, etc. Esto es dinámico y se actualiza con cada resultado.
+function assignBestThirds(fR) {
+  const b3 = getBestThirds(fR);
+  // Partidos con "Mejor 3°" ordenados por fecha de juego
+  const slots = ELIM
+    .filter(m => m[3]==='Mejor 3°' || m[4]==='Mejor 3°')
+    .sort((a,b) => {
+      // Orden por fecha: extraer día y mes del string
+      const parseD = s => { const mm=s.match(/(\d+)-(\w+)/); return mm?parseInt(mm[1])+(mm[2]==='jul'?100:0):0; };
+      return parseD(a[2]) - parseD(b[2]);
+    });
+  // Mapa: matchId -> {team, flag} del mejor tercero asignado
+  const map = {};
+  slots.forEach((m, i) => {
+    const t = b3[i];
+    if(t) map[m[0]] = { n: t.n, f: t.f };
+  });
+  return map;
+}
+
+function resolveRef(ref, fR, eR, b3assigned, matchId) {
   // 1°/2° de grupo
   const gm = ref.match(/^(\d)° Grupo ([A-L])$/);
   if(gm){ const s=calcStandings(gm[2],fR); const i=parseInt(gm[1])-1; return s[i]?`${s[i].f} ${s[i].n}`:ref; }
 
-  // Mejor 3° — usa asignación manual del admin si existe, si no muestra ranking automático
+  // Mejor 3° — asignación dinámica por ranking FIFA
   if(ref==='Mejor 3°') {
-    if(b3map && b3map['pending_slot']) return b3map['pending_slot'];
+    if(b3assigned && matchId && b3assigned[matchId]) {
+      const t = b3assigned[matchId];
+      return `${t.f} ${t.n}`;
+    }
+    // Sin suficientes datos aún
     const b3 = getBestThirds(fR);
-    const groupsDone = GK.filter(g => {
-      const s = calcStandings(g, fR);
-      return s.length > 0 && s[0].pj > 0;
-    }).length;
-    if(groupsDone < 8 || b3.length === 0) return 'Mejor 3° ⏳';
-    return `Mejor 3° (${b3.slice(0,4).map(t=>t.f).join('')})`;
+    if(b3.length === 0) return 'Mejor 3° ⏳';
+    // Mostrar el mejor disponible con indicador de que es provisional
+    return `${b3[0].f} ${b3[0].n}*`;
   }
 
   // Gan. PXX
   const gn = ref.match(/^Gan\. P(\d+)$/);
-  if(gn){ const id=parseInt(gn[1]),r=eR?.[id]; if(!r?.fin)return ref; const[gl,gv]=r.fin.split('-').map(Number); if(isNaN(gl)||isNaN(gv))return ref; const m=ELIM.find(x=>x[0]===id); if(!m)return ref; return gl>gv?resolveRef(m[3],fR,eR,b3map):resolveRef(m[4],fR,eR,b3map); }
+  if(gn){ const id=parseInt(gn[1]),r=eR?.[id]; if(!r?.fin)return ref; const[gl,gv]=r.fin.split('-').map(Number); if(isNaN(gl)||isNaN(gv))return ref; const m=ELIM.find(x=>x[0]===id); if(!m)return ref; return gl>gv?resolveRef(m[3],fR,eR,b3assigned,id):resolveRef(m[4],fR,eR,b3assigned,id); }
 
   // Perd. PXX
   const pn = ref.match(/^Perd\. P(\d+)$/);
-  if(pn){ const id=parseInt(pn[1]),r=eR?.[id]; if(!r?.fin)return ref; const[gl,gv]=r.fin.split('-').map(Number); if(isNaN(gl)||isNaN(gv))return ref; const m=ELIM.find(x=>x[0]===id); if(!m)return ref; return gl>gv?resolveRef(m[4],fR,eR,b3map):resolveRef(m[3],fR,eR,b3map); }
+  if(pn){ const id=parseInt(pn[1]),r=eR?.[id]; if(!r?.fin)return ref; const[gl,gv]=r.fin.split('-').map(Number); if(isNaN(gl)||isNaN(gv))return ref; const m=ELIM.find(x=>x[0]===id); if(!m)return ref; return gl>gv?resolveRef(m[4],fR,eR,b3assigned,id):resolveRef(m[3],fR,eR,b3assigned,id); }
 
   return ref;
 }
@@ -267,14 +294,14 @@ function SyncBtn({ sync, syncing, onClick }) {
   );
 }
 
-function MatchCard({ m, isAdmin, user, allPreds, result, onVote, onResult, isElim, fRes, eRes, bcCode }) {
+function MatchCard({ m, isAdmin, user, allPreds, result, onVote, onResult, isElim, fRes, eRes, bcCode, b3assigned }) {
   const [open, setOpen] = React.useState(false);
   const pred = allPreds?.[m[0]]?.[user] || {};
   const res = result || {};
   const locked = !isAdmin && (!!res.g || !!res.fin);
   const pts = Object.keys(res).length ? scoreMatch(pred, res) : null;
-  const tL = isElim ? resolveRef(m[3], fRes, eRes, null) : `${m[5]} ${m[3]}`;
-  const tV = isElim ? resolveRef(m[4], fRes, eRes, null) : `${m[6]} ${m[4]}`;
+  const tL = isElim ? resolveRef(m[3], fRes, eRes, b3assigned||{}, m[0]) : `${m[5]} ${m[3]}`;
+  const tV = isElim ? resolveRef(m[4], fRes, eRes, b3assigned||{}, m[0]) : `${m[6]} ${m[4]}`;
   const hasPred = Object.values(pred).some(v=>v);
   const voters = PLAYERS.filter(p=>p!==user&&allPreds?.[m[0]]?.[p]&&Object.values(allPreds[m[0]][p]).some(v=>v));
   const optLbl = v => v==='SG'?'Sin goles':v==='L'?'Local':v==='E'?'Empate':'Visita';
@@ -481,10 +508,11 @@ function PosicionesView({ fdg }) {
 function EliminatoriasView({ user, isAdmin, elim, fdg, onVote, onResult }) {
   const [rnd,setRnd]=React.useState('R32');
   const e=React.createElement;
+  const b3assigned = assignBestThirds(fdg.results);
   return e('div',{className:'view'},
     e('div',{className:'sec'},'🏟️ Eliminatorias'),
     e('div',{className:'filt'},...['R32','8vos','4tos','Semi','3er','Final'].map(r=>e('button',{key:r,className:`fb${rnd===r?' on':''}`,onClick:()=>setRnd(r)},RL[r]||r))),
-    ...ELIM.filter(m=>m[1]===rnd).map(m=>e(MatchCard,{key:m[0],m,isAdmin,user,allPreds:elim.preds,result:elim.results?.[m[0]],onVote:(id,k,v)=>onVote(id,k,v,'elim'),onResult:(id,k,v)=>onResult(id,k,v,'elim'),isElim:true,fRes:fdg.results,eRes:elim.results,bcCode:BCE[m[1]]||'DC'}))
+    ...ELIM.filter(m=>m[1]===rnd).map(m=>e(MatchCard,{key:m[0],m,isAdmin,user,allPreds:elim.preds,result:elim.results?.[m[0]],onVote:(id,k,v)=>onVote(id,k,v,'elim'),onResult:(id,k,v)=>onResult(id,k,v,'elim'),isElim:true,fRes:fdg.results,eRes:elim.results,bcCode:BCE[m[1]]||'DC',b3assigned}))
   );
 }
 
