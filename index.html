@@ -94,13 +94,39 @@ function calcStandings(g, res) {
   return Object.values(t).sort((a,b)=>b.pts-a.pts||b.dg-a.dg||b.gf-a.gf||a.tj-b.tj);
 }
 
-function resolveRef(ref,fR,eR){
-  const gm=ref.match(/^(\d)° Grupo ([A-L])$/);
-  if(gm){const s=calcStandings(gm[2],fR);const i=parseInt(gm[1])-1;return s[i]?`${s[i].f} ${s[i].n}`:ref;}
-  const gn=ref.match(/^Gan\. P(\d+)$/);
-  if(gn){const id=parseInt(gn[1]),r=eR?.[id];if(!r?.fin)return ref;const[gl,gv]=r.fin.split('-').map(Number);if(isNaN(gl)||isNaN(gv))return ref;const m=ELIM.find(x=>x[0]===id);if(!m)return ref;return gl>gv?resolveRef(m[3],fR,eR):resolveRef(m[4],fR,eR);}
-  const pn=ref.match(/^Perd\. P(\d+)$/);
-  if(pn){const id=parseInt(pn[1]),r=eR?.[id];if(!r?.fin)return ref;const[gl,gv]=r.fin.split('-').map(Number);if(isNaN(gl)||isNaN(gv))return ref;const m=ELIM.find(x=>x[0]===id);if(!m)return ref;return gl>gv?resolveRef(m[4],fR,eR):resolveRef(m[3],fR,eR);}
+// Calcula los mejores terceros de todos los grupos, ordenados por criterios FIFA
+function getBestThirds(fR) {
+  return GK
+    .map(g => { const s = calcStandings(g, fR); const t = s[2]; return t ? {...t, grp: g} : null; })
+    .filter(Boolean)
+    .sort((a,b) => b.pts-a.pts || b.dg-a.dg || b.gf-a.gf || a.tj-b.tj);
+}
+
+function resolveRef(ref, fR, eR, b3map) {
+  // 1°/2° de grupo
+  const gm = ref.match(/^(\d)° Grupo ([A-L])$/);
+  if(gm){ const s=calcStandings(gm[2],fR); const i=parseInt(gm[1])-1; return s[i]?`${s[i].f} ${s[i].n}`:ref; }
+
+  // Mejor 3° — usa asignación manual del admin si existe, si no muestra ranking automático
+  if(ref==='Mejor 3°') {
+    if(b3map && b3map['pending_slot']) return b3map['pending_slot'];
+    const b3 = getBestThirds(fR);
+    const groupsDone = GK.filter(g => {
+      const s = calcStandings(g, fR);
+      return s.length > 0 && s[0].pj > 0;
+    }).length;
+    if(groupsDone < 8 || b3.length === 0) return 'Mejor 3° ⏳';
+    return `Mejor 3° (${b3.slice(0,4).map(t=>t.f).join('')})`;
+  }
+
+  // Gan. PXX
+  const gn = ref.match(/^Gan\. P(\d+)$/);
+  if(gn){ const id=parseInt(gn[1]),r=eR?.[id]; if(!r?.fin)return ref; const[gl,gv]=r.fin.split('-').map(Number); if(isNaN(gl)||isNaN(gv))return ref; const m=ELIM.find(x=>x[0]===id); if(!m)return ref; return gl>gv?resolveRef(m[3],fR,eR,b3map):resolveRef(m[4],fR,eR,b3map); }
+
+  // Perd. PXX
+  const pn = ref.match(/^Perd\. P(\d+)$/);
+  if(pn){ const id=parseInt(pn[1]),r=eR?.[id]; if(!r?.fin)return ref; const[gl,gv]=r.fin.split('-').map(Number); if(isNaN(gl)||isNaN(gv))return ref; const m=ELIM.find(x=>x[0]===id); if(!m)return ref; return gl>gv?resolveRef(m[4],fR,eR,b3map):resolveRef(m[3],fR,eR,b3map); }
+
   return ref;
 }
 
@@ -247,8 +273,8 @@ function MatchCard({ m, isAdmin, user, allPreds, result, onVote, onResult, isEli
   const res = result || {};
   const locked = !isAdmin && (!!res.g || !!res.fin);
   const pts = Object.keys(res).length ? scoreMatch(pred, res) : null;
-  const tL = isElim ? resolveRef(m[3], fRes, eRes) : `${m[5]} ${m[3]}`;
-  const tV = isElim ? resolveRef(m[4], fRes, eRes) : `${m[6]} ${m[4]}`;
+  const tL = isElim ? resolveRef(m[3], fRes, eRes, null) : `${m[5]} ${m[3]}`;
+  const tV = isElim ? resolveRef(m[4], fRes, eRes, null) : `${m[6]} ${m[4]}`;
   const hasPred = Object.values(pred).some(v=>v);
   const voters = PLAYERS.filter(p=>p!==user&&allPreds?.[m[0]]?.[p]&&Object.values(allPreds[m[0]][p]).some(v=>v));
   const optLbl = v => v==='SG'?'Sin goles':v==='L'?'Local':v==='E'?'Empate':'Visita';
@@ -410,21 +436,45 @@ function GruposView({ user, isAdmin, fdg, onVote, onResult }) {
 
 function PosicionesView({ fdg }) {
   const e=React.createElement;
+  const b3 = getBestThirds(fdg.results);
+  const groupsDone = GK.filter(g => { const s=calcStandings(g,fdg.results); return s.length>0&&s[0].pj>0; }).length;
   return e('div',{className:'view'},
     e('div',{className:'sec'},'📊 Posiciones por grupo'),
     e('div',{className:'grd'},...GK.map(g=>{const s=calcStandings(g,fdg.results);return e('div',{key:g,className:'gt'},
       e('div',{className:'gth'},'Grupo '+g),
       e('div',{className:'gtw'},e('table',{className:'st'},
         e('thead',null,e('tr',null,e('th',null,'Equipo'),...['PJ','PG','PE','PP','GF','GC','DG','PTS'].map(h=>e('th',{key:h},h)))),
-        e('tbody',null,...s.map((t,i)=>e('tr',{key:t.n},
-          e('td',null,e('span',{style:{display:'inline-flex',alignItems:'center',justifyContent:'center',width:15,height:15,borderRadius:'50%',background:i<2?'#0F1C3F':'#f1f5f9',color:i<2?'#F59E0B':'#94a3b8',fontSize:9,fontWeight:500,marginRight:3}},i+1),t.f+' '+t.n),
+        e('tbody',null,...s.map((t,i)=>e('tr',{key:t.n,style:{background:i===2?'rgba(245,158,11,0.06)':''}},
+          e('td',null,e('span',{style:{display:'inline-flex',alignItems:'center',justifyContent:'center',width:15,height:15,borderRadius:'50%',background:i<2?'#0F1C3F':i===2?'rgba(245,158,11,0.2)':'#f1f5f9',color:i<2?'#F59E0B':i===2?'#b45309':'#94a3b8',fontSize:9,fontWeight:500,marginRight:3}},i===2?'3°':i+1),t.f+' '+t.n),
           e('td',null,t.pj),e('td',null,t.pg),e('td',null,t.pe),e('td',null,t.pp),e('td',null,t.gf),e('td',null,t.gc),
           e('td',{style:{fontWeight:500,color:t.dg>0?'#16A34A':t.dg<0?'#DC2626':'inherit'}},(t.dg>0?'+':'')+t.dg),
           e('td',{style:{fontWeight:500}},t.pts)
         )))
       ))
     );})),
-    e('div',{className:'hint'},'★ GF/GC/DG desde marcador exacto · PJ/PTS actualizan desde Ganador')
+    e('div',{className:'sec',style:{marginTop:16}},'🥉 Ranking mejores terceros '+(groupsDone<12?`(${groupsDone}/12 grupos jugados)`:'')),
+    b3.length===0
+      ? e('div',{className:'hint'},'Aún no hay resultados para calcular mejores terceros.')
+      : e('div',{style:{background:'#fff',border:'1px solid #e2e8f0',borderRadius:12,overflow:'auto'}},
+          e('table',{className:'st',style:{width:'100%'}},
+            e('thead',null,e('tr',null,
+              e('th',null,'#'),e('th',{style:{textAlign:'left'}},'Equipo'),e('th',null,'Grp'),
+              ...['PJ','PG','PE','PP','GF','GC','DG','PTS'].map(h=>e('th',{key:h},h))
+            )),
+            e('tbody',null,...b3.map((t,i)=>e('tr',{key:t.n,style:{background:i<8?'rgba(245,158,11,0.05)':'',opacity:i>=8?0.5:1}},
+              e('td',null,e('span',{style:{display:'inline-flex',alignItems:'center',justifyContent:'center',width:18,height:18,borderRadius:'50%',background:i<8?'#0F1C3F':'#f1f5f9',color:i<8?'#F59E0B':'#94a3b8',fontSize:9,fontWeight:500}},i+1)),
+              e('td',{style:{fontWeight:500}},t.f+' '+t.n),
+              e('td',{style:{textAlign:'center',color:'#64748b',fontSize:11}},'Gr.'+t.grp),
+              e('td',null,t.pj),e('td',null,t.pg),e('td',null,t.pe),e('td',null,t.pp),e('td',null,t.gf),e('td',null,t.gc),
+              e('td',{style:{fontWeight:500,color:t.dg>0?'#16A34A':t.dg<0?'#DC2626':'inherit'}},(t.dg>0?'+':'')+t.dg),
+              e('td',{style:{fontWeight:700,color:i<8?'#F59E0B':'inherit'}},t.pts)
+            )))
+          ),
+          b3.length>=8&&e('div',{style:{padding:'6px 12px',background:'#f0fdf4',fontSize:11,color:'#15803d',borderTop:'1px solid #dcfce7'}},
+            '✅ Clasifican: '+b3.slice(0,8).map(t=>`${t.f} ${t.n} (Gr.${t.grp})`).join(' · ')
+          )
+        ),
+    e('div',{className:'hint'},'★ Terceros ordenados por PTS → DG → GF → Tarjetas (criterio FIFA). Filas amarillas clasifican.')
   );
 }
 
