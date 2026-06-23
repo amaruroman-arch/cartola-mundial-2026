@@ -27,12 +27,16 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: #f8fafc; colo
 .bk-tname.tbd { color:#1e3a5f; font-style:italic; font-size:11px; }
 .bk-score { font-family:Georgia,serif; font-size:15px; font-weight:700; color:#F59E0B; min-width:22px; text-align:right; flex-shrink:0; }
 .bk-score.lose { color:#334155; }
-.bk-date { font-size:9px; color:#1e3a5f; padding:2px 10px 5px; }
 .bk-trophy { text-align:center; padding:16px 0 8px; }
 .bk-trophy-box { display:inline-flex; flex-direction:column; align-items:center; gap:6px; background:#0a1628; border:2px solid #F59E0B; border-radius:14px; padding:16px 32px; }
 .bk-trophy-cup { font-size:44px; line-height:1; }
 .bk-trophy-name { font-family:Georgia,serif; font-size:15px; color:#F59E0B; font-weight:700; }
 .bk-trophy-sub { font-size:10px; color:#475569; }
+.bk-bottom-row { display:flex; gap:8px; margin:8px 0; }
+.bk-bottom-row > div { flex:1; min-width:0; }
+.bk-bottom-title { text-align:center; font-size:10px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; padding:5px 0 4px; margin-bottom:4px; }
+.bk-bottom-title.gold { color:#F59E0B; border-bottom:1px solid #F59E0B44; }
+.bk-bottom-title.silver { color:#94a3b8; border-bottom:1px solid #33415566; }
 .bk-wrap2 { padding:10px 8px 24px; background:#060e1f; }
 .bk-half-lbl { text-align:center; font-size:10px; color:#1E3A6B; letter-spacing:.1em; text-transform:uppercase; padding:4px 0 10px; }
 .bk-bracket { display:flex; flex-direction:row; gap:4px; width:100%; overflow-x:auto; padding-bottom:4px; }
@@ -60,17 +64,18 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: #f8fafc; colo
 .bk-tname.tbd { color:#0f1c3f; font-style:italic; font-size:9px; }
 .bk-score { font-family:Georgia,serif; font-size:12px; font-weight:700; color:#F59E0B; min-width:18px; text-align:right; flex-shrink:0; }
 .bk-score.lose { color:#1e3a5f; }
-.bk-date { font-size:8px; color:#0f1c3f; padding:1px 7px 4px; }
+.bk-date { font-size:9px; color:#64748b; padding:2px 7px 5px; line-height:1.4; }
 .bk-final-wrap { margin:12px 0 4px; }
-.bk-final-lbl { text-align:center; font-family:Georgia,serif; font-size:12px; color:#F59E0B; font-weight:700; padding:6px 0; border-top:1px solid #1E3A6B; border-bottom:1px solid #1E3A6B; margin-bottom:6px; }
+.bk-final-lbl { text-align:center; font-family:Georgia,serif; font-size:12px; color:#F59E0B; font-weight:700; padding:6px 0 4px; margin-bottom:4px; }
 .bk-final-card { max-width:280px; margin:0 auto; }
 .bk-third-wrap { margin:12px 0 4px; }
-.bk-third-lbl { text-align:center; font-size:11px; color:#94a3b8; padding:4px 0; border-top:1px solid #1E3A6B; margin-bottom:6px; }
+.bk-third-lbl { text-align:center; font-size:11px; color:#94a3b8; padding:4px 0 4px; margin-bottom:4px; }
 .bk-trophy { text-align:center; padding:12px 0 8px; }
 .bk-trophy-box { display:inline-flex; flex-direction:column; align-items:center; gap:5px; background:#0a1628; border:2px solid #F59E0B; border-radius:14px; padding:14px 28px; }
 .bk-trophy-cup { font-size:40px; line-height:1; }
 .bk-trophy-name { font-family:Georgia,serif; font-size:14px; color:#F59E0B; font-weight:700; }
 .bk-trophy-sub { font-size:10px; color:#475569; }
+
 
 </style>
 </head>
@@ -83,6 +88,41 @@ const PLAYERS = ['AMARU','RATA','CARRIL','ALFARO','PANTERA','VELIZ','SOTO'];
 const PC = {AMARU:'#1565C0',RATA:'#B71C1C',CARRIL:'#1B5E20',ALFARO:'#E65100',PANTERA:'#6A1B9A',VELIZ:'#00695C',SOTO:'#795548'};
 const ADMIN_CODE = 'noria2026';
 const SK = { fdg:'cn_fdg_v6', elim:'cn_elim_v6', champs:'cn_champs_v6' };
+
+const ELIM_META = {
+  73:["SoFi Stadium","LA","DC"],
+  74:["Levi's Stadium","SF","DS"],
+  75:["Rose Bowl","Pasadena","DS"],
+  76:["MetLife Stadium","NJ","DC"],
+  77:["AT&T Stadium","Dallas","PM"],
+  78:["Arrowhead Stadium","KC","DS"],
+  79:["Gillette Stadium","Boston","DC"],
+  80:["Hard Rock Stadium","Miami","DS"],
+  81:["NRG Stadium","Houston","PM"],
+  82:["Allegiant Stadium","Las Vegas","DC"],
+  83:["BC Place","Vancouver","DS"],
+  84:["BMO Field","Toronto","PM"],
+  85:["Q2 Stadium","Austin","DS"],
+  86:["Empower Field","Denver","DC"],
+  87:["Mercedes-Benz","Atlanta","PM"],
+  88:["Lincoln Financial","Filadelfia","DS"],
+  89:["Levi's Stadium","SF","DCD"],
+  90:["SoFi Stadium","LA","DCD"],
+  91:["MetLife Stadium","NJ","DCD"],
+  92:["Gillette Stadium","Boston","DCD"],
+  93:["BMO Field","Toronto","DCD"],
+  94:["AT&T Stadium","Dallas","DCD"],
+  95:["Mercedes-Benz","Atlanta","DCD"],
+  96:["Hard Rock Stadium","Miami","DCD"],
+  97:["SoFi Stadium","LA","DCD"],
+  98:["AT&T Stadium","Dallas","DCD"],
+  99:["MetLife Stadium","NJ","DCD"],
+  100:["Hard Rock Stadium","Miami","DCD"],
+  101:["MetLife Stadium","NJ","DCD"],
+  102:["SoFi Stadium","LA","DCD"],
+  103:["Hard Rock Stadium","Miami","DCD"],
+  104:["MetLife Stadium","NJ","DCD"]
+};
 
 const BC = {"1":"DCD","2":"D","3":"DCD","4":"DCD","5":"DC","6":"DCD","7":"D","8":"D","9":"D","10":"DCD","11":"DCD","12":"D","13":"DD","14":"DC","15":"DCD","16":"D","17":"DC","18":"D","19":"DCD","20":"D","21":"D","22":"DC","23":"D","24":"DCD","25":"D","26":"DCD","27":"DC","28":"DD","29":"DC","30":"DC","31":"D","32":"D","33":"D","34":"DCD","35":"DCD","36":"DC","37":"DCD","38":"DC","39":"D","40":"D","41":"DCD","42":"D","43":"DC","44":"D","45":"DC","46":"DC","47":"DC","48":"DD","49":"D","50":"D","51":"DCD","52":"D","53":"DC","54":"D","55":"D","56":"DCD","57":"D","58":"DC","59":"D","60":"DC","61":"DC","62":"D","63":"D","64":"DCD","65":"D","66":"D","67":"D","68":"D","69":"DCD","70":"D","71":"DD","72":"D"};
 const BCE = {R32:'DC','8vos':'DCD','4tos':'DCD',Semi:'DCD','3er':'DCD',Final:'DCD'};
@@ -619,7 +659,24 @@ function FixtureBracket({ elim, fdg }) {
       e('div', { className: 'bk-mid' }, '#' + matchId),
       teamRow(tL, wL, wV, done ? gl : null),
       teamRow(tV, wV, wL, done ? gv : null),
-      e('div', { className: 'bk-date' }, m ? m[2] : '')
+      e('div', { className: 'bk-date' },
+        (() => {
+          if (!m) return '';
+          const meta = ELIM_META[matchId];
+          const ch = meta ? meta[2] : '';
+          const show = ['DS','PM'];
+          if(ch==='DC'||ch==='DCD') show.push('CH');
+          if(ch==='DD'||ch==='DCD') show.push('DP');
+          const chips = show.map(k => {
+            const {bg,tx,nm} = CH[k];
+            return e('span',{key:k,style:{fontSize:8,fontWeight:700,padding:'1px 3px',borderRadius:3,background:bg,color:tx,marginRight:2}},nm);
+          });
+          return e('div',{style:{display:'flex',flexWrap:'wrap',alignItems:'center',gap:2}},
+            e('span',{style:{marginRight:4}}, m[2] + (meta ? ' · ' + meta[0] + ', ' + meta[1] : '')),
+            ...chips
+          );
+        })()
+      )
     );
   }
 
@@ -704,12 +761,7 @@ function FixtureBracket({ elim, fdg }) {
       ),
     ),
 
-    // FINAL
-    e('div', { className: 'bk-final-wrap' },
-      e('div', { className: 'bk-final-lbl' }, '🏆 FINAL · 19 jul · MetLife NJ'),
-      e('div', { className: 'bk-final-card' }, e(BkCard, { matchId: 104 }))
-    ),
-
+    // FINAL stays above bottom half — moved to bottom row below
     // Semi 102
     e('div', { className: 'bk-bracket bk-bracket-bot' },
       e('div', { className: 'bk-col bk-col-narrow' },
@@ -745,10 +797,16 @@ function FixtureBracket({ elim, fdg }) {
     ),
     e('div', { className: 'bk-half-lbl' }, '── Mitad Inferior ──'),
 
-    // 3er lugar
-    e('div', { className: 'bk-third-wrap' },
-      e('div', { className: 'bk-third-lbl' }, '🥉 Tercer Lugar · 18 jul'),
-      e('div', { className: 'bk-final-card' }, e(BkCard, { matchId: 103 }))
+    // 3er lugar + Final side by side
+    e('div', { className: 'bk-bottom-row' },
+      e('div', null,
+        e('div', { className: 'bk-bottom-title silver' }, '🥉 3er Lugar · Sáb 18 jul'),
+        e(BkCard, { matchId: 103 })
+      ),
+      e('div', null,
+        e('div', { className: 'bk-bottom-title gold' }, '🏆 Final · Dom 19 jul'),
+        e(BkCard, { matchId: 104 })
+      )
     ),
   );
 }
