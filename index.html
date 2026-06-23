@@ -137,6 +137,8 @@ const ALL_TEAMS = [...new Set(Object.values(GR).flat().map(([n])=>n))].sort();
 const GK = ['A','B','C','D','E','F','G','H','I','J','K','L'];
 const RL = {R32:'Ronda 32','8vos':'Octavos','4tos':'Cuartos',Semi:'Semifinal','3er':'3er Lugar',Final:'FINAL'};
 const CATS = [{k:'g',l:'GANADOR',o:[['L','Local'],['E','Empate'],['V','Visita']],p:3},{k:'gol',l:'1° GOL',o:[['L','Local'],['V','Visita'],['SG','Sin goles']],p:1},{k:'rem',l:'REMATES',o:[['L','Local'],['V','Visita']],p:1},{k:'fal',l:'FALTAS',o:[['L','Local'],['V','Visita']],p:1},{k:'off',l:'OFFSIDES',o:[['L','Local'],['V','Visita']],p:1},{k:'tar',l:'TARJETAS',o:[['L','Local'],['V','Visita']],p:1}];
+// Eliminatorias: Ganador sin Empate + categorías extras
+const CATS_ELIM = [{k:'g',l:'GANADOR',o:[['L','Local'],['V','Visita']],p:3},{k:'gol',l:'1° GOL',o:[['L','Local'],['V','Visita'],['SG','Sin goles']],p:1},{k:'rem',l:'REMATES',o:[['L','Local'],['V','Visita']],p:1},{k:'fal',l:'FALTAS',o:[['L','Local'],['V','Visita']],p:1},{k:'off',l:'OFFSIDES',o:[['L','Local'],['V','Visita']],p:1},{k:'tar',l:'TARJETAS',o:[['L','Local'],['V','Visita']],p:1},{k:'ala',l:'¿ALARGUE?',o:[['S','Sí'],['N','No']],p:2},{k:'pen',l:'¿PENALES?',o:[['S','Sí'],['N','No']],p:2}];
 const CH = {DS:{bg:'#0B4D52',tx:'#6EE7E7',nm:'DSports+'},PM:{bg:'#18183A',tx:'#F4D03F',nm:'P+'},CH:{bg:'#B91C1C',tx:'#FECACA',nm:'CHV'},DP:{bg:'#1E3A8A',tx:'#93C5FD',nm:'Disney+'}};
 
 // ── BACKEND: Google Apps Script ──────────────────────────────────────────────
@@ -162,14 +164,29 @@ async function lsSet(k, d) {
 
 const E0 = () => ({preds:{},results:{}});
 
-function scoreMatch(p,r){
+function scoreMatch(p,r,isElim){
   if(!p||!r)return 0;
   let s=0;
   if(r.g&&p.g===r.g)s+=3;
   for(const k of['gol','rem','fal','off','tar'])if(r[k]&&p[k]===r[k])s++;
   if(r.par&&p.par&&r.par.toLowerCase()===p.par.toLowerCase())s++;
+  if(r.res90&&p.res90&&r.res90.toLowerCase()===p.res90.toLowerCase())s++;
   if(r.fin&&p.fin&&r.fin.toLowerCase()===p.fin.toLowerCase())s++;
+  if(isElim){
+    if(r.ala&&p.ala===r.ala)s+=2;
+    if(r.pen&&p.pen===r.pen)s+=2;
+  }
   return s;
+}
+// Feedback por categoría: 'ok'|'bad'|'draw'|null
+function catResult(k,p,r){
+  if(!r||!p)return null;
+  const rv=r[k]; const pv=p[k];
+  if(!rv||!pv)return null;
+  // Empate técnico: L/V donde ambos equipos empataron (tar, rem, fal, off)
+  // El admin marca empate poniendo 'E' como resultado
+  if(rv==='E') return 'draw';
+  return pv===rv?'ok':'bad';
 }
 
 function calcStandings(g, res) {
@@ -401,17 +418,51 @@ function MatchCard({ m, isAdmin, user, allPreds, result, onVote, onResult, isEli
   const pred = allPreds?.[m[0]]?.[user] || {};
   const res = result || {};
   const locked = !isAdmin && (!!res.g || !!res.fin);
-  const pts = Object.keys(res).length ? scoreMatch(pred, res) : null;
+  const pts = Object.keys(res).length ? scoreMatch(pred, res, isElim) : null;
   const tL = isElim ? resolveRef(m[3], fRes, eRes, b3assigned||{}, m[0]) : `${m[5]} ${m[3]}`;
   const tV = isElim ? resolveRef(m[4], fRes, eRes, b3assigned||{}, m[0]) : `${m[6]} ${m[4]}`;
   const hasPred = Object.values(pred).some(v=>v);
   const voters = PLAYERS.filter(p=>p!==user&&allPreds?.[m[0]]?.[p]&&Object.values(allPreds[m[0]][p]).some(v=>v));
-  const optLbl = v => v==='SG'?'Sin goles':v==='L'?'Local':v==='E'?'Empate':'Visita';
+  const optLbl = v=>v==='SG'?'Sin goles':v==='L'?'Local':v==='E'?'Empate':v==='S'?'Sí':v==='N'?'No':'Visita';
+  const cats = isElim ? CATS_ELIM : CATS;
+
+  const handleVote = (id,k,v) => {
+    onVote(id,k,v);
+    if(!isElim) return;
+    if(k==='ala'&&v==='N') onVote(id,'pen','N');
+    if(k==='pen'&&v==='S') onVote(id,'ala','S');
+  };
+  const handleRes90 = v => {
+    onVote(m[0],'res90',v);
+    const p=v.trim().split('-').map(Number);
+    if(p.length===2&&p.every(x=>!isNaN(x))&&p[0]!==p[1]){ onVote(m[0],'ala','N'); onVote(m[0],'pen','N'); }
+  };
+  const handleFin = v => {
+    onVote(m[0],'fin',v);
+    const p=v.trim().split('-').map(Number);
+    if(p.length===2&&p.every(x=>!isNaN(x))&&p[0]!==p[1]) onVote(m[0],'g',p[0]>p[1]?'L':'V');
+  };
   const handleAdminFin = v => {
     onResult(m[0],'fin',v);
-    if(v){const p=v.trim().split('-').map(Number);if(p.length===2&&p.every(x=>!isNaN(x))){const g=p[0]>p[1]?'L':p[0]<p[1]?'V':'E';if(res.g!==g)onResult(m[0],'g',g);}}
+    const p=v.trim().split('-').map(Number);
+    if(p.length===2&&p.every(x=>!isNaN(x))&&p[0]!==p[1]) onResult(m[0],'g',p[0]>p[1]?'L':'V');
+  };
+  const handleAdminRes90 = v => {
+    onResult(m[0],'res90',v);
+    const p=v.trim().split('-').map(Number);
+    if(p.length===2&&p.every(x=>!isNaN(x))&&p[0]!==p[1]){ onResult(m[0],'ala','N'); onResult(m[0],'pen','N'); }
   };
   const e = React.createElement;
+
+  const fbBadge = (cr,status,pv) => {
+    if(!cr) return e('span',{className:'cp',style:{color:'#94a3b8'}},`+${pv}`);
+    if(status==='ok')   return e('span',{className:'cp',style:{color:'#16A34A',fontWeight:600}},`✓ +${pv}`);
+    if(status==='bad')  return e('span',{className:'cp',style:{color:'#DC2626',fontWeight:600}},`✗ +${pv}`);
+    if(status==='draw') return e('span',{className:'cp',style:{color:'#94a3b8'}},`— +${pv}`);
+    return e('span',{className:'cp',style:{color:'#94a3b8'}},`+${pv}`);
+  };
+  const tiFeedback = (cr,cp) => { if(!cr||!cp)return ''; return cr.toLowerCase()===cp.toLowerCase()?' ok':' bad'; };
+
   return e('div',{className:'mc'},
     e('div',{className:'mh',onClick:()=>setOpen(o=>!o)},
       e('div',{className:'mn'},'#'+m[0], !isElim&&e('div',{style:{color:'#F59E0B',fontSize:9}},'Gr.'+m[1])),
@@ -430,30 +481,89 @@ function MatchCard({ m, isAdmin, user, allPreds, result, onVote, onResult, isEli
     ),
     open&&e('div',{className:'mb'},
       locked&&e('div',{className:'lkb'},'🔒 Resultado registrado — predicciones bloqueadas'),
-      CATS.map(cat=>{
-        const cr=res[cat.k]||null,cp=pred[cat.k]||null,iC=cr&&cp===cr;
+      cats.map(cat=>{
+        const cr=res[cat.k]||null, cp=pred[cat.k]||null;
+        const status=catResult(cat.k,pred,res);
         return e('div',{key:cat.k,className:'cr'},
           e('span',{className:'cl'},cat.l),
-          e('span',{className:'cp',style:{color:iC?'#16A34A':'#94a3b8',fontWeight:iC?500:400}},iC?`✓+${cat.p}`:`+${cat.p}`),
+          fbBadge(cr,status,cat.p),
           e('div',{style:{display:'flex',gap:3,flexWrap:'wrap'}},
-            cat.o.map(([v])=>{const isSel=cp===v,isOk=cr&&v===cr,isBad=cr&&isSel&&v!==cr;let cls='vb';if(isOk&&isSel)cls+=' ok';else if(isBad)cls+=' bad';else if(isSel)cls+=' sel';if(locked)cls+=' lk';return e('button',{key:v,className:cls,onClick:()=>!locked&&!isAdmin&&onVote(m[0],cat.k,v)},optLbl(v));})
+            cat.o.map(([v])=>{
+              const isSel=cp===v, isOk=cr&&v===cr, isBad=cr&&isSel&&v!==cr;
+              let cls='vb';
+              if(isOk&&isSel) cls+=' ok';
+              else if(isBad) cls+=' bad';
+              else if(isSel) cls+=' sel';
+              if(locked) cls+=' lk';
+              return e('button',{key:v,className:cls,onClick:()=>!locked&&!isAdmin&&handleVote(m[0],cat.k,v)},optLbl(v));
+            })
           ),
-          e('div',{style:{display:'flex',gap:2,flexWrap:'wrap',marginLeft:3}},
-            PLAYERS.filter(p=>p!==user&&allPreds?.[m[0]]?.[p]?.[cat.k]).map(p=>e('span',{key:p,style:{fontSize:9,fontWeight:700,padding:'1px 3px',borderRadius:3,background:PC[p],color:'#fff'},title:p},allPreds[m[0]][p][cat.k]))
+          e('div',{style:{display:'flex',gap:2,flexWrap:'wrap',marginLeft:3,alignItems:'center'}},
+            PLAYERS.filter(p=>p!==user&&allPreds?.[m[0]]?.[p]?.[cat.k]).map(p=>
+              e('span',{key:p,style:{width:8,height:8,borderRadius:'50%',background:PC[p],display:'inline-block'},title:p+' ya votó'})
+            )
           )
         );
       }),
-      [['par','PARCIAL (1T)'],['fin','FINAL']].map(([k,lb])=>{const cr=res[k]||'',cp=pred[k]||'',iC=cr&&cp&&cr.toLowerCase()===cp.toLowerCase();return e('div',{key:k,className:'cr'},e('span',{className:'cl'},lb),e('span',{className:'cp',style:{color:iC?'#16A34A':'#94a3b8',fontWeight:iC?500:400}},iC?'✓+1':'+1'),e('input',{className:`ti${iC?' ok':cr&&cp?' bad':''}`,placeholder:'2-1',value:cp,readOnly:locked||isAdmin,onChange:ev=>!locked&&!isAdmin&&onVote(m[0],k,ev.target.value)}),cr&&e('span',{style:{fontSize:10,color:'#94a3b8',marginLeft:4}},'Real: '+cr));}),
+      e('div',{key:'par',className:'cr'},
+        e('span',{className:'cl'},'PARCIAL (1T)'),
+        fbBadge(res.par,catResult('par',pred,res),1),
+        e('input',{className:'ti'+tiFeedback(res.par,pred.par),placeholder:'2-1',value:pred.par||'',readOnly:locked||isAdmin,onChange:ev=>!locked&&!isAdmin&&onVote(m[0],'par',ev.target.value)}),
+        res.par&&e('span',{style:{fontSize:10,color:'#94a3b8',marginLeft:4}},'Real: '+res.par)
+      ),
+      isElim&&e('div',{key:'res90',className:'cr'},
+        e('span',{className:'cl'},"RESULT. 90'"),
+        fbBadge(res.res90,catResult('res90',pred,res),1),
+        e('input',{className:'ti'+tiFeedback(res.res90,pred.res90),placeholder:'1-1',value:pred.res90||'',readOnly:locked||isAdmin,onChange:ev=>!locked&&!isAdmin&&handleRes90(ev.target.value)}),
+        res.res90&&e('span',{style:{fontSize:10,color:'#94a3b8',marginLeft:4}},'Real: '+res.res90)
+      ),
+      e('div',{key:'fin',className:'cr'},
+        e('span',{className:'cl'},isElim?'RESULT. FINAL':'FINAL'),
+        fbBadge(res.fin,catResult('fin',pred,res),1),
+        e('input',{className:'ti'+tiFeedback(res.fin,pred.fin),placeholder:'2-1',value:pred.fin||'',readOnly:locked||isAdmin,onChange:ev=>!locked&&!isAdmin&&(isElim?handleFin(ev.target.value):onVote(m[0],'fin',ev.target.value))}),
+        res.fin&&e('span',{style:{fontSize:10,color:'#94a3b8',marginLeft:4}},'Real: '+res.fin)
+      ),
       isAdmin&&e('div',{className:'adm'},
         e('div',{className:'adm-t'},'🔧 ADMIN — Resultado real'),
-        e('div',{className:'adm-h'},'Ingresa el marcador final — Ganador se detecta solo y actualiza posiciones.'),
-        CATS.filter(c=>c.k!=='g').map(cat=>e('div',{key:cat.k,className:'adm-r'},e('span',{className:'adm-l'},cat.l),e('div',{style:{display:'flex',gap:3,flexWrap:'wrap'}},cat.o.map(([v,lb])=>e('button',{key:v,className:`ab${res[cat.k]===v?' on':''}`,onClick:()=>onResult(m[0],cat.k,res[cat.k]===v?null:v)},lb))))),
-        e('div',{className:'fr'},
-          e('div',{className:'fb2'},e('div',{className:'fl',style:{color:'#F59E0B'}},'MARCADOR FINAL ★'),e('input',{className:'fi',placeholder:'3-0',value:res.fin||'',onChange:ev=>handleAdminFin(ev.target.value)})),
-          e('div',{className:'fb2'},e('div',{className:'fl'},'PARCIAL 1T'),e('input',{className:'ai',style:{width:72,textAlign:'center'},placeholder:'1-0',value:res.par||'',onChange:ev=>onResult(m[0],'par',ev.target.value)})),
-          e('div',{className:'fb2'},e('div',{className:'fl'},'GANADOR'),e('div',{style:{display:'flex',gap:3}},[['L','Local'],['E','Emp.'],['V','Visita']].map(([v,lb])=>e('button',{key:v,className:`ab${res.g===v?' on':''}`,onClick:()=>onResult(m[0],'g',res.g===v?null:v)},lb))))
+        e('div',{className:'adm-h'},isElim?"Elim: Ganador=clasificado. Res.Final incluye alargue (no penales).":"Marcador final autocompleta Ganador."),
+        cats.filter(c=>!['g','ala','pen'].includes(c.k)).map(cat=>
+          e('div',{key:cat.k,className:'adm-r'},
+            e('span',{className:'adm-l'},cat.l),
+            e('div',{style:{display:'flex',gap:3,flexWrap:'wrap'}},
+              cat.o.map(([v,lb])=>e('button',{key:v,className:`ab${res[cat.k]===v?' on':''}`,onClick:()=>onResult(m[0],cat.k,res[cat.k]===v?null:v)},lb))
+            )
+          )
         ),
-        !isElim&&e('div',{className:'adm-r',style:{marginTop:8,paddingTop:8,borderTop:'1px solid #e2e8f0'}},e('span',{className:'adm-l'},'Tarj. L / V'),e('input',{className:'ai',style:{width:50},placeholder:'L',value:res.cl||'',onChange:ev=>onResult(m[0],'cl',ev.target.value)}),e('input',{className:'ai',style:{width:50},placeholder:'V',value:res.cv||'',onChange:ev=>onResult(m[0],'cv',ev.target.value)}))
+        e('div',{className:'fr'},
+          e('div',{className:'fb2'},e('div',{className:'fl'},'PARCIAL 1T'),e('input',{className:'ai',style:{width:72,textAlign:'center'},placeholder:'1-0',value:res.par||'',onChange:ev=>onResult(m[0],'par',ev.target.value)})),
+          isElim&&e('div',{className:'fb2'},e('div',{className:'fl'},"RESULTADO 90'"),e('input',{className:'ai',style:{width:72,textAlign:'center'},placeholder:'1-1',value:res.res90||'',onChange:ev=>handleAdminRes90(ev.target.value)})),
+          e('div',{className:'fb2'},e('div',{className:'fl',style:{color:'#F59E0B'}},isElim?'RESULT. FINAL (c/alargue) ★':'MARCADOR FINAL ★'),e('input',{className:'fi',placeholder:'3-0',value:res.fin||'',onChange:ev=>handleAdminFin(ev.target.value)})),
+          e('div',{className:'fb2'},
+            e('div',{className:'fl'},'GANADOR'+(isElim?' (clasifica)':'')),
+            e('div',{style:{display:'flex',gap:3}},
+              (isElim?[['L','Local'],['V','Visita']]:[['L','Local'],['E','Emp.'],['V','Visita']]).map(([v,lb])=>
+                e('button',{key:v,className:`ab${res.g===v?' on':''}`,onClick:()=>onResult(m[0],'g',res.g===v?null:v)},lb)
+              )
+            )
+          ),
+          isElim&&e('div',{className:'fb2'},
+            e('div',{className:'fl'},'¿ALARGUE?'),
+            e('div',{style:{display:'flex',gap:3}},
+              [['S','Sí'],['N','No']].map(([v,lb])=>e('button',{key:v,className:`ab${res.ala===v?' on':''}`,onClick:()=>{onResult(m[0],'ala',res.ala===v?null:v);if(v==='N')onResult(m[0],'pen','N');}},lb))
+            )
+          ),
+          isElim&&e('div',{className:'fb2'},
+            e('div',{className:'fl'},'¿PENALES?'),
+            e('div',{style:{display:'flex',gap:3}},
+              [['S','Sí'],['N','No']].map(([v,lb])=>e('button',{key:v,className:`ab${res.pen===v?' on':''}`,onClick:()=>onResult(m[0],'pen',res.pen===v?null:v)},lb))
+            )
+          )
+        ),
+        !isElim&&e('div',{className:'adm-r',style:{marginTop:8,paddingTop:8,borderTop:'1px solid #e2e8f0'}},
+          e('span',{className:'adm-l'},'Tarj. L / V'),
+          e('input',{className:'ai',style:{width:50},placeholder:'L',value:res.cl||'',onChange:ev=>onResult(m[0],'cl',ev.target.value)}),
+          e('input',{className:'ai',style:{width:50},placeholder:'V',value:res.cv||'',onChange:ev=>onResult(m[0],'cv',ev.target.value)})
+        )
       )
     )
   );
@@ -523,8 +633,8 @@ function Tabla({ fdg, elim, champ }) {
   const medals=['🥇','🥈','🥉'];
   const rows=PLAYERS.map(p=>{
     let fP=0,eP=0;
-    FDG.forEach(m=>{fP+=scoreMatch(fdg.preds?.[m[0]]?.[p],fdg.results?.[m[0]]);});
-    ELIM.forEach(m=>{eP+=scoreMatch(elim.preds?.[m[0]]?.[p],elim.results?.[m[0]]);});
+    FDG.forEach(m=>{fP+=scoreMatch(fdg.preds?.[m[0]]?.[p],fdg.results?.[m[0]],false);});
+    ELIM.forEach(m=>{eP+=scoreMatch(elim.preds?.[m[0]]?.[p],elim.results?.[m[0]],true);});
     const cv=champ.votes?.[p],cr=champ.real,ok=cv&&cr&&cv.toUpperCase()===cr.toUpperCase();
     return{p,fP,eP,total:fP+eP,ok,cv};
   }).sort((a,b)=>b.total-a.total);
