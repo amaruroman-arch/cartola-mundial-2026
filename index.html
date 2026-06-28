@@ -425,7 +425,10 @@ function MatchCard({ m, isAdmin, user, allPreds, result, onVote, onResult, isEli
   const handleRes90 = v => {
     onVote(m[0],'res90',v);
     const p=v.trim().split('-').map(Number);
-    if(p.length===2&&p.every(x=>!isNaN(x))&&p[0]!==p[1]){ onVote(m[0],'ala','N'); onVote(m[0],'pen','N'); }
+    if(p.length===2&&p.every(x=>!isNaN(x))&&p[0]!==p[1]){
+      onVote(m[0],'ala','N'); onVote(m[0],'pen','N');
+      onVote(m[0],'fin',v); onVote(m[0],'g',p[0]>p[1]?'L':'V');
+    }
   };
   const handleFin = v => {
     onVote(m[0],'fin',v);
@@ -440,7 +443,10 @@ function MatchCard({ m, isAdmin, user, allPreds, result, onVote, onResult, isEli
   const handleAdminRes90 = v => {
     onResult(m[0],'res90',v);
     const p=v.trim().split('-').map(Number);
-    if(p.length===2&&p.every(x=>!isNaN(x))&&p[0]!==p[1]){ onResult(m[0],'ala','N'); onResult(m[0],'pen','N'); }
+    if(p.length===2&&p.every(x=>!isNaN(x))&&p[0]!==p[1]){
+      onResult(m[0],'ala','N'); onResult(m[0],'pen','N');
+      onResult(m[0],'fin',v); onResult(m[0],'g',p[0]>p[1]?'L':'V');
+    }
   };
   const e = React.createElement;
 
