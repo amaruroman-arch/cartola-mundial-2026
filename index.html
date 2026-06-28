@@ -90,38 +90,43 @@ const ADMIN_CODE = 'noria2026';
 const SK = { fdg:'cn_fdg_v6', elim:'cn_elim_v6', champs:'cn_champs_v6' };
 
 const ELIM_META = {
-  73:["SoFi Stadium","LA","DC"],
-  74:["Levi's Stadium","SF","DS"],
-  75:["Rose Bowl","Pasadena","DS"],
-  76:["MetLife Stadium","NJ","DC"],
-  77:["AT&T Stadium","Dallas","PM"],
-  78:["Arrowhead Stadium","KC","DS"],
-  79:["Gillette Stadium","Boston","DC"],
-  80:["Hard Rock Stadium","Miami","DS"],
-  81:["NRG Stadium","Houston","PM"],
-  82:["Allegiant Stadium","Las Vegas","DC"],
-  83:["BC Place","Vancouver","DS"],
-  84:["BMO Field","Toronto","PM"],
-  85:["Q2 Stadium","Austin","DS"],
-  86:["Empower Field","Denver","DC"],
-  87:["Mercedes-Benz","Atlanta","PM"],
-  88:["Lincoln Financial","Filadelfia","DS"],
-  89:["Levi's Stadium","SF","DCD"],
-  90:["SoFi Stadium","LA","DCD"],
-  91:["MetLife Stadium","NJ","DCD"],
-  92:["Gillette Stadium","Boston","DCD"],
-  93:["BMO Field","Toronto","DCD"],
-  94:["AT&T Stadium","Dallas","DCD"],
-  95:["Mercedes-Benz","Atlanta","DCD"],
-  96:["Hard Rock Stadium","Miami","DCD"],
-  97:["SoFi Stadium","LA","DCD"],
-  98:["AT&T Stadium","Dallas","DCD"],
-  99:["MetLife Stadium","NJ","DCD"],
-  100:["Hard Rock Stadium","Miami","DCD"],
-  101:["MetLife Stadium","NJ","DCD"],
-  102:["SoFi Stadium","LA","DCD"],
-  103:["Hard Rock Stadium","Miami","DCD"],
-  104:["MetLife Stadium","NJ","DCD"]
+  // R32 — datos confirmados
+  73:["SoFi Stadium","Los Ángeles","DC"],          // Sudáfrica vs Canadá · Dom 28-jun 12:00 local
+  74:["Estadio Gillette","Boston","DC"],            // Alemania vs Paraguay · Lun 29-jun 16:30 local
+  75:["Estadio Monterrey","Monterrey","DC"],        // Países Bajos vs Marruecos · Lun 29-jun 19:00 local
+  76:["Estadio NRG","Houston","DC"],               // Brasil vs Japón · Lun 29-jun 12:00 local
+  77:["Estadio MetLife","Nueva York NJ","DC"],     // Francia vs Suecia · Mar 30-jun 17:00 local
+  78:["Estadio AT&T","Dallas","DC"],               // Costa de Marfil vs Noruega · Mar 30-jun 12:00 local
+  79:["Estadio Azteca","Ciudad de México","DC"],   // México vs Ecuador · Mar 30-jun 19:00 local
+  80:["Estadio Mercedes-Benz","Atlanta","DC"],     // Inglaterra vs RD Congo · Mié 1-jul 12:00 local
+  81:["Estadio Levi's","San Francisco","DC"],      // USA vs Bosnia · Mié 1-jul 17:00 local
+  82:["Estadio Lumen Field","Seattle","DC"],       // Bélgica vs Senegal · Mié 1-jul 13:00 local
+  83:["Estadio BMO Field","Toronto","DC"],         // Portugal vs Croacia · Jue 2-jul 19:00 local
+  84:["SoFi Stadium","Los Ángeles","DC"],          // España vs Austria · Jue 2-jul 12:00 local
+  85:["Estadio Q2","Austin","DC"],                 // Suiza vs Argelia · Jue 2-jul 23:00 local
+  86:["Estadio Empower Field","Denver","DC"],      // Colombia vs Ghana · Vie 3-jul 18:00 local
+  87:["Estadio Lincoln Financial","Filadelfia","DC"], // P87 · Vie 3-jul 21:30 local
+  88:["Estadio Allegiant","Las Vegas","DC"],       // P88 · Vie 3-jul 14:00 local
+  // 8vos
+  89:["Estadio Levi's","San Francisco","DC"],
+  90:["SoFi Stadium","Los Ángeles","DC"],
+  91:["Estadio MetLife","Nueva York NJ","DC"],
+  92:["Estadio Gillette","Boston","DC"],
+  93:["Estadio BMO Field","Toronto","DC"],
+  94:["Estadio AT&T","Dallas","DC"],
+  95:["Estadio Mercedes-Benz","Atlanta","DC"],
+  96:["Estadio Hard Rock","Miami","DC"],
+  // 4tos
+  97:["SoFi Stadium","Los Ángeles","DC"],
+  98:["Estadio AT&T","Dallas","DC"],
+  99:["Estadio MetLife","Nueva York NJ","DC"],
+  100:["Estadio Hard Rock","Miami","DC"],
+  // Semis
+  101:["Estadio MetLife","Nueva York NJ","DC"],
+  102:["SoFi Stadium","Los Ángeles","DC"],
+  // 3er y Final
+  103:["Estadio Hard Rock","Miami","DC"],
+  104:["Estadio MetLife","Nueva York NJ","DC"]
 };
 
 const BC = {"1":"DCD","2":"D","3":"DCD","4":"DCD","5":"DC","6":"DCD","7":"D","8":"D","9":"D","10":"DCD","11":"DCD","12":"D","13":"DD","14":"DC","15":"DCD","16":"D","17":"DC","18":"D","19":"DCD","20":"D","21":"D","22":"DC","23":"D","24":"DCD","25":"D","26":"DCD","27":"DC","28":"DD","29":"DC","30":"DC","31":"D","32":"D","33":"D","34":"DCD","35":"DCD","36":"DC","37":"DCD","38":"DC","39":"D","40":"D","41":"DCD","42":"D","43":"DC","44":"D","45":"DC","46":"DC","47":"DC","48":"DD","49":"D","50":"D","51":"DCD","52":"D","53":"DC","54":"D","55":"D","56":"DCD","57":"D","58":"DC","59":"D","60":"DC","61":"DC","62":"D","63":"D","64":"DCD","65":"D","66":"D","67":"D","68":"D","69":"DCD","70":"D","71":"DD","72":"D"};
@@ -129,7 +134,7 @@ const BCE = {R32:'DC','8vos':'DCD','4tos':'DCD',Semi:'DCD','3er':'DCD',Final:'DC
 
 const FDG = [[1,"A","JUE 11-jun 15:00","MÉXICO","SUDÁFRICA","🇲🇽","🇿🇦"],[2,"A","JUE 11-jun 22:00","COREA DEL SUR","CHEQUIA","🇰🇷","🇨🇿"],[3,"B","VIE 12-jun 15:00","CANADÁ","BOSNIA Y HERZ.","🇨🇦","🇧🇦"],[4,"D","VIE 12-jun 21:00","USA","PARAGUAY","🇺🇸","🇵🇾"],[5,"B","SÁB 13-jun 15:00","QATAR","SUIZA","🇶🇦","🇨🇭"],[6,"C","SÁB 13-jun 18:00","BRASIL","MARRUECOS","🇧🇷","🇲🇦"],[7,"C","SÁB 13-jun 21:00","HAITÍ","ESCOCIA","🇭🇹","🏴"],[8,"D","DOM 14-jun 00:00","AUSTRALIA","TÜRKIYE","🇦🇺","🇹🇷"],[9,"E","DOM 14-jun 13:00","ALEMANIA","CURAZAO","🇩🇪","🇨🇼"],[10,"F","DOM 14-jun 16:00","PAÍSES BAJOS","JAPÓN","🇳🇱","🇯🇵"],[11,"E","DOM 14-jun 19:00","COSTA DE MARFIL","ECUADOR","🇨🇮","🇪🇨"],[12,"F","DOM 14-jun 22:00","SUECIA","TÚNEZ","🇸🇪","🇹🇳"],[13,"H","LUN 15-jun 12:00","ESPAÑA","CABO VERDE","🇪🇸","🇨🇻"],[14,"G","LUN 15-jun 15:00","BÉLGICA","EGIPTO","🇧🇪","🇪🇬"],[15,"H","LUN 15-jun 18:00","ARABIA SAUDITA","URUGUAY","🇸🇦","🇺🇾"],[16,"G","LUN 15-jun 21:00","IRÁN","NUEVA ZELANDA","🇮🇷","🇳🇿"],[17,"I","MAR 16-jun 15:00","FRANCIA","SENEGAL","🇫🇷","🇸🇳"],[18,"I","MAR 16-jun 18:00","IRAK","NORUEGA","🇮🇶","🇳🇴"],[19,"J","MAR 16-jun 21:00","ARGENTINA","ARGELIA","🇦🇷","🇩🇿"],[20,"J","MIÉ 17-jun 00:00","AUSTRIA","JORDANIA","🇦🇹","🇯🇴"],[21,"K","MIÉ 17-jun 13:00","PORTUGAL","DR CONGO","🇵🇹","🇨🇩"],[22,"L","MIÉ 17-jun 16:00","INGLATERRA","CROACIA","🏴","🇭🇷"],[23,"L","MIÉ 17-jun 19:00","GHANA","PANAMÁ","🇬🇭","🇵🇦"],[24,"K","MIÉ 17-jun 22:00","UZBEKISTÁN","COLOMBIA","🇺🇿","🇨🇴"],[25,"A","JUE 18-jun 12:00","CHEQUIA","SUDÁFRICA","🇨🇿","🇿🇦"],[26,"B","JUE 18-jun 15:00","SUIZA","BOSNIA Y HERZ.","🇨🇭","🇧🇦"],[27,"B","JUE 18-jun 18:00","CANADÁ","QATAR","🇨🇦","🇶🇦"],[28,"A","JUE 18-jun 21:00","MÉXICO","COREA DEL SUR","🇲🇽","🇰🇷"],[29,"D","VIE 19-jun 15:00","USA","AUSTRALIA","🇺🇸","🇦🇺"],[30,"C","VIE 19-jun 18:00","ESCOCIA","MARRUECOS","🏴","🇲🇦"],[31,"C","VIE 19-jun 20:30","BRASIL","HAITÍ","🇧🇷","🇭🇹"],[32,"D","VIE 19-jun 23:00","TÜRKIYE","PARAGUAY","🇹🇷","🇵🇾"],[33,"F","SÁB 20-jun 13:00","PAÍSES BAJOS","SUECIA","🇳🇱","🇸🇪"],[34,"E","SÁB 20-jun 16:00","ALEMANIA","COSTA DE MARFIL","🇩🇪","🇨🇮"],[35,"E","SÁB 20-jun 20:00","ECUADOR","CURAZAO","🇪🇨","🇨🇼"],[36,"F","DOM 21-jun 00:00","TÚNEZ","JAPÓN","🇹🇳","🇯🇵"],[37,"H","DOM 21-jun 12:00","ESPAÑA","ARABIA SAUDITA","🇪🇸","🇸🇦"],[38,"G","DOM 21-jun 15:00","BÉLGICA","IRÁN","🇧🇪","🇮🇷"],[39,"H","DOM 21-jun 18:00","URUGUAY","CABO VERDE","🇺🇾","🇨🇻"],[40,"G","DOM 21-jun 21:00","NUEVA ZELANDA","EGIPTO","🇳🇿","🇪🇬"],[41,"J","LUN 22-jun 13:00","ARGENTINA","AUSTRIA","🇦🇷","🇦🇹"],[42,"I","LUN 22-jun 17:00","FRANCIA","IRAK","🇫🇷","🇮🇶"],[43,"I","LUN 22-jun 20:00","NORUEGA","SENEGAL","🇳🇴","🇸🇳"],[44,"J","LUN 22-jun 23:00","JORDANIA","ARGELIA","🇯🇴","🇩🇿"],[45,"K","MAR 23-jun 13:00","PORTUGAL","UZBEKISTÁN","🇵🇹","🇺🇿"],[46,"L","MAR 23-jun 16:00","INGLATERRA","GHANA","🏴","🇬🇭"],[47,"L","MAR 23-jun 19:00","PANAMÁ","CROACIA","🇵🇦","🇭🇷"],[48,"K","MAR 23-jun 22:00","COLOMBIA","DR CONGO","🇨🇴","🇨🇩"],[49,"B","MIÉ 24-jun 15:00","SUIZA","CANADÁ","🇨🇭","🇨🇦"],[50,"B","MIÉ 24-jun 15:00","BOSNIA Y HERZ.","QATAR","🇧🇦","🇶🇦"],[51,"C","MIÉ 24-jun 18:00","ESCOCIA","BRASIL","🏴","🇧🇷"],[52,"C","MIÉ 24-jun 18:00","MARRUECOS","HAITÍ","🇲🇦","🇭🇹"],[53,"A","MIÉ 24-jun 21:00","CHEQUIA","MÉXICO","🇨🇿","🇲🇽"],[54,"A","MIÉ 24-jun 21:00","SUDÁFRICA","COREA DEL SUR","🇿🇦","🇰🇷"],[55,"E","JUE 25-jun 16:00","CURAZAO","COSTA DE MARFIL","🇨🇼","🇨🇮"],[56,"E","JUE 25-jun 16:00","ECUADOR","ALEMANIA","🇪🇨","🇩🇪"],[57,"F","JUE 25-jun 19:00","JAPÓN","SUECIA","🇯🇵","🇸🇪"],[58,"F","JUE 25-jun 19:00","TÚNEZ","PAÍSES BAJOS","🇹🇳","🇳🇱"],[59,"D","JUE 25-jun 22:00","TÜRKIYE","USA","🇹🇷","🇺🇸"],[60,"D","JUE 25-jun 22:00","PARAGUAY","AUSTRALIA","🇵🇾","🇦🇺"],[61,"I","VIE 26-jun 15:00","NORUEGA","FRANCIA","🇳🇴","🇫🇷"],[62,"I","VIE 26-jun 15:00","SENEGAL","IRAK","🇸🇳","🇮🇶"],[63,"H","VIE 26-jun 20:00","CABO VERDE","ARABIA SAUDITA","🇨🇻","🇸🇦"],[64,"H","VIE 26-jun 20:00","URUGUAY","ESPAÑA","🇺🇾","🇪🇸"],[65,"G","VIE 26-jun 23:00","EGIPTO","IRÁN","🇪🇬","🇮🇷"],[66,"G","VIE 26-jun 23:00","NUEVA ZELANDA","BÉLGICA","🇳🇿","🇧🇪"],[67,"L","SÁB 27-jun 17:00","PANAMÁ","INGLATERRA","🇵🇦","🏴"],[68,"L","SÁB 27-jun 17:00","CROACIA","GHANA","🇭🇷","🇬🇭"],[69,"K","SÁB 27-jun 19:30","COLOMBIA","PORTUGAL","🇨🇴","🇵🇹"],[70,"K","SÁB 27-jun 19:30","DR CONGO","UZBEKISTÁN","🇨🇩","🇺🇿"],[71,"J","SÁB 27-jun 22:00","ARGELIA","AUSTRIA","🇩🇿","🇦🇹"],[72,"J","SÁB 27-jun 22:00","JORDANIA","ARGENTINA","🇯🇴","🇦🇷"]];
 
-const ELIM = [[73,"R32","DOM 28-jun 15:00","2° Grupo A","2° Grupo B"],[76,"R32","LUN 29-jun 13:00","1° Grupo C","2° Grupo F"],[74,"R32","LUN 29-jun 16:30","1° Grupo E","🇵🇾 PARAGUAY"],[75,"R32","LUN 29-jun 21:00","1° Grupo F","2° Grupo C"],[78,"R32","MAR 30-jun 13:00","2° Grupo E","2° Grupo I"],[77,"R32","MAR 30-jun 17:00","1° Grupo I","Mejor 3°"],[79,"R32","MAR 30-jun 21:00","1° Grupo A","🇪🇨 ECUADOR"],[80,"R32","MIÉ 01-jul 12:00","1° Grupo L","🇨🇩 DR CONGO"],[82,"R32","MIÉ 01-jul 16:00","1° Grupo G","🇸🇳 SENEGAL"],[81,"R32","MIÉ 01-jul 20:00","1° Grupo D","🇧🇦 BOSNIA Y HERZ."],[84,"R32","JUE 02-jul 15:00","1° Grupo H","2° Grupo J"],[83,"R32","JUE 02-jul 19:00","2° Grupo K","2° Grupo L"],[85,"R32","JUE 02-jul 23:00","1° Grupo B","🇩🇿 ARGELIA"],[88,"R32","VIE 03-jul 14:00","2° Grupo D","2° Grupo G"],[86,"R32","VIE 03-jul 18:00","🇨🇴 COLOMBIA","🇬🇭 GHANA"],[87,"R32","VIE 03-jul 21:30","1° Grupo K","Mejor 3°"],[90,"8vos","SÁB 04-jul 13:00","Gan. P73","Gan. P75"],[89,"8vos","SÁB 04-jul 17:00","Gan. P74","Gan. P77"],[91,"8vos","DOM 05-jul 16:00","Gan. P76","Gan. P78"],[92,"8vos","DOM 05-jul 20:00","Gan. P79","Gan. P80"],[93,"8vos","LUN 06-jul 15:00","Gan. P83","Gan. P84"],[94,"8vos","LUN 06-jul 20:00","Gan. P81","Gan. P82"],[95,"8vos","MAR 07-jul 12:00","Gan. P86","Gan. P88"],[96,"8vos","MAR 07-jul 16:00","Gan. P85","Gan. P87"],[97,"4tos","JUE 09-jul 16:00","Gan. P89","Gan. P90"],[98,"4tos","VIE 10-jul 15:00","Gan. P93","Gan. P94"],[99,"4tos","SÁB 11-jul 17:00","Gan. P91","Gan. P92"],[100,"4tos","SÁB 11-jul 21:00","Gan. P95","Gan. P96"],[101,"Semi","MAR 14-jul 15:00","Gan. P97","Gan. P98"],[102,"Semi","MIÉ 15-jul 15:00","Gan. P99","Gan. P100"],[103,"3er","SÁB 18-jul 17:00","Perd. P101","Perd. P102"],[104,"Final","DOM 19-jul 15:00","Gan. P101","Gan. P102"]];
+const ELIM = [[73,"R32","DOM 28-jun 15:00","2° Grupo A","2° Grupo B"],[76,"R32","LUN 29-jun 13:00","1° Grupo C","2° Grupo F"],[74,"R32","LUN 29-jun 16:30","1° Grupo E","🇵🇾 PARAGUAY"],[75,"R32","LUN 29-jun 21:00","1° Grupo F","2° Grupo C"],[78,"R32","MAR 30-jun 13:00","2° Grupo E","2° Grupo I"],[77,"R32","MAR 30-jun 17:00","1° Grupo I","🇸🇪 SUECIA"],[79,"R32","MAR 30-jun 21:00","1° Grupo A","🇪🇨 ECUADOR"],[80,"R32","MIÉ 01-jul 12:00","1° Grupo L","🇨🇩 DR CONGO"],[82,"R32","MIÉ 01-jul 16:00","1° Grupo G","🇸🇳 SENEGAL"],[81,"R32","MIÉ 01-jul 20:00","1° Grupo D","🇧🇦 BOSNIA Y HERZ."],[84,"R32","JUE 02-jul 15:00","1° Grupo H","2° Grupo J"],[83,"R32","JUE 02-jul 19:00","🇵🇹 PORTUGAL","🇭🇷 CROACIA"],[85,"R32","JUE 02-jul 23:00","1° Grupo B","🇩🇿 ARGELIA"],[88,"R32","VIE 03-jul 14:00","2° Grupo D","2° Grupo G"],[86,"R32","VIE 03-jul 18:00","🇨🇴 COLOMBIA","🇬🇭 GHANA"],[87,"R32","VIE 03-jul 21:30","1° Grupo K","Mejor 3°"],[90,"8vos","SÁB 04-jul 13:00","Gan. P73","Gan. P75"],[89,"8vos","SÁB 04-jul 17:00","Gan. P74","Gan. P77"],[91,"8vos","DOM 05-jul 16:00","Gan. P76","Gan. P78"],[92,"8vos","DOM 05-jul 20:00","Gan. P79","Gan. P80"],[93,"8vos","LUN 06-jul 15:00","Gan. P83","Gan. P84"],[94,"8vos","LUN 06-jul 20:00","Gan. P81","Gan. P82"],[95,"8vos","MAR 07-jul 12:00","Gan. P86","Gan. P88"],[96,"8vos","MAR 07-jul 16:00","Gan. P85","Gan. P87"],[97,"4tos","JUE 09-jul 16:00","Gan. P89","Gan. P90"],[98,"4tos","VIE 10-jul 15:00","Gan. P93","Gan. P94"],[99,"4tos","SÁB 11-jul 17:00","Gan. P91","Gan. P92"],[100,"4tos","SÁB 11-jul 21:00","Gan. P95","Gan. P96"],[101,"Semi","MAR 14-jul 15:00","Gan. P97","Gan. P98"],[102,"Semi","MIÉ 15-jul 15:00","Gan. P99","Gan. P100"],[103,"3er","SÁB 18-jul 17:00","Perd. P101","Perd. P102"],[104,"Final","DOM 19-jul 15:00","Gan. P101","Gan. P102"]];
 
 const GR = {"A":[["MÉXICO","🇲🇽"],["COREA DEL SUR","🇰🇷"],["SUDÁFRICA","🇿🇦"],["CHEQUIA","🇨🇿"]],"B":[["CANADÁ","🇨🇦"],["BOSNIA Y HERZ.","🇧🇦"],["QATAR","🇶🇦"],["SUIZA","🇨🇭"]],"C":[["BRASIL","🇧🇷"],["MARRUECOS","🇲🇦"],["HAITÍ","🇭🇹"],["ESCOCIA","🏴"]],"D":[["USA","🇺🇸"],["PARAGUAY","🇵🇾"],["AUSTRALIA","🇦🇺"],["TÜRKIYE","🇹🇷"]],"E":[["ALEMANIA","🇩🇪"],["CURAZAO","🇨🇼"],["COSTA DE MARFIL","🇨🇮"],["ECUADOR","🇪🇨"]],"F":[["PAÍSES BAJOS","🇳🇱"],["JAPÓN","🇯🇵"],["SUECIA","🇸🇪"],["TÚNEZ","🇹🇳"]],"G":[["BÉLGICA","🇧🇪"],["EGIPTO","🇪🇬"],["IRÁN","🇮🇷"],["NUEVA ZELANDA","🇳🇿"]],"H":[["ESPAÑA","🇪🇸"],["CABO VERDE","🇨🇻"],["ARABIA SAUDITA","🇸🇦"],["URUGUAY","🇺🇾"]],"I":[["FRANCIA","🇫🇷"],["SENEGAL","🇸🇳"],["NORUEGA","🇳🇴"],["IRAK","🇮🇶"]],"J":[["ARGENTINA","🇦🇷"],["ARGELIA","🇩🇿"],["AUSTRIA","🇦🇹"],["JORDANIA","🇯🇴"]],"K":[["PORTUGAL","🇵🇹"],["COLOMBIA","🇨🇴"],["DR CONGO","🇨🇩"],["UZBEKISTÁN","🇺🇿"]],"L":[["INGLATERRA","🏴"],["PANAMÁ","🇵🇦"],["CROACIA","🇭🇷"],["GHANA","🇬🇭"]]};
 
@@ -178,14 +183,12 @@ function scoreMatch(p,r,isElim){
   }
   return s;
 }
-// Feedback por categoría: 'ok'|'bad'|'draw'|null
+// Feedback por categoría: 'ok'|'bad'|null
+// En elim, 'E' es una opción válida de botón — quien votó 'E' gana si el resultado es 'E'
 function catResult(k,p,r){
   if(!r||!p)return null;
   const rv=r[k]; const pv=p[k];
   if(!rv||!pv)return null;
-  // Empate técnico: L/V donde ambos equipos empataron (tar, rem, fal, off)
-  // El admin marca empate poniendo 'E' como resultado
-  if(rv==='E') return 'draw';
   return pv===rv?'ok':'bad';
 }
 
@@ -443,9 +446,8 @@ function MatchCard({ m, isAdmin, user, allPreds, result, onVote, onResult, isEli
 
   const fbBadge = (cr,status,pv) => {
     if(!cr) return e('span',{className:'cp',style:{color:'#94a3b8'}},`+${pv}`);
-    if(status==='ok')   return e('span',{className:'cp',style:{color:'#16A34A',fontWeight:600}},`✓ +${pv}`);
-    if(status==='bad')  return e('span',{className:'cp',style:{color:'#DC2626',fontWeight:600}},`✗ +${pv}`);
-    if(status==='draw') return e('span',{className:'cp',style:{color:'#94a3b8'}},`— +${pv}`);
+    if(status==='ok')  return e('span',{className:'cp',style:{color:'#16A34A',fontWeight:600}},`✓ +${pv}`);
+    if(status==='bad') return e('span',{className:'cp',style:{color:'#DC2626',fontWeight:600}},`✗ +${pv}`);
     return e('span',{className:'cp',style:{color:'#94a3b8'}},`+${pv}`);
   };
   const tiFeedback = (cr,cp) => { if(!cr||!cp)return ''; return cr.toLowerCase()===cp.toLowerCase()?' ok':' bad'; };
