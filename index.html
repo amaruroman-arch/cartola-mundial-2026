@@ -141,9 +141,9 @@ const GR = {"A":[["MÉXICO","🇲🇽"],["COREA DEL SUR","🇰🇷"],["SUDÁFRIC
 const ALL_TEAMS = [...new Set(Object.values(GR).flat().map(([n])=>n))].sort();
 const GK = ['A','B','C','D','E','F','G','H','I','J','K','L'];
 const RL = {R32:'Ronda 32','8vos':'Octavos','4tos':'Cuartos',Semi:'Semifinal','3er':'3er Lugar',Final:'FINAL'};
-const CATS = [{k:'g',l:'GANADOR',o:[['L','Local'],['E','Empate'],['V','Visita']],p:3},{k:'gol',l:'1° GOL',o:[['L','Local'],['V','Visita'],['SG','Sin goles']],p:1},{k:'rem',l:'REMATES',o:[['L','Local'],['V','Visita']],p:1},{k:'fal',l:'FALTAS',o:[['L','Local'],['V','Visita']],p:1},{k:'off',l:'OFFSIDES',o:[['L','Local'],['V','Visita']],p:1},{k:'tar',l:'TARJETAS',o:[['L','Local'],['V','Visita']],p:1}];
+const CATS = [{k:'g',l:'GANADOR',o:[['L','Local'],['E','Empate'],['V','Visita']],p:3},{k:'gol',l:'1° GOL',o:[['L','Local'],['V','Visita'],['SG','Sin goles']],p:1},{k:'rem',l:'REMATES',o:[['L','Local'],['V','Visita']],p:1},{k:'fal',l:'FALTAS',o:[['L','Local'],['V','Visita']],p:1},{k:'off',l:'OFFSIDES',o:[['L','Local'],['V','Visita']],p:1},{k:'tar',l:'1ERA TARJETA',o:[['L','Local'],['V','Visita'],['ST','Sin tarjetas']],p:1}];
 // Eliminatorias: Ganador sin Empate + categorías extras
-const CATS_ELIM = [{k:'g',l:'GANADOR',o:[['L','Local'],['V','Visita']],p:3},{k:'gol',l:'1° GOL',o:[['L','Local'],['V','Visita'],['SG','Sin goles']],p:1},{k:'rem',l:'REMATES',o:[['L','Local'],['E','Empate'],['V','Visita']],p:1},{k:'fal',l:'FALTAS',o:[['L','Local'],['E','Empate'],['V','Visita']],p:1},{k:'off',l:'OFFSIDES',o:[['L','Local'],['E','Empate'],['V','Visita']],p:1},{k:'tar',l:'TARJETAS',o:[['L','Local'],['E','Empate'],['V','Visita']],p:1},{k:'ala',l:'¿ALARGUE?',o:[['S','Sí'],['N','No']],p:2},{k:'pen',l:'¿PENALES?',o:[['S','Sí'],['N','No']],p:2}];
+const CATS_ELIM = [{k:'g',l:'GANADOR',o:[['L','Local'],['V','Visita']],p:3},{k:'gol',l:'1° GOL',o:[['L','Local'],['V','Visita'],['SG','Sin goles']],p:1},{k:'rem',l:'REMATES',o:[['L','Local'],['E','Empate'],['V','Visita']],p:1},{k:'fal',l:'FALTAS',o:[['L','Local'],['E','Empate'],['V','Visita']],p:1},{k:'off',l:'OFFSIDES',o:[['L','Local'],['E','Empate'],['V','Visita']],p:1},{k:'tar',l:'1ERA TARJETA',o:[['L','Local'],['V','Visita'],['ST','Sin tarjetas']],p:1},{k:'ala',l:'¿ALARGUE?',o:[['S','Sí'],['N','No']],p:2},{k:'pen',l:'¿PENALES?',o:[['S','Sí'],['N','No']],p:2}];
 const CH = {DS:{bg:'#0B4D52',tx:'#6EE7E7',nm:'DSports+'},PM:{bg:'#18183A',tx:'#F4D03F',nm:'P+'},CH:{bg:'#B91C1C',tx:'#FECACA',nm:'CHV'},DP:{bg:'#1E3A8A',tx:'#93C5FD',nm:'Disney+'}};
 
 // ── BACKEND: Google Apps Script ──────────────────────────────────────────────
@@ -413,7 +413,7 @@ function MatchCard({ m, isAdmin, user, allPreds, result, onVote, onResult, isEli
   const tV = isElim ? resolveRef(m[4], fRes, eRes, b3assigned||{}, m[0]) : `${m[6]} ${m[4]}`;
   const hasPred = Object.values(pred).some(v=>v);
   const voters = PLAYERS.filter(p=>p!==user&&allPreds?.[m[0]]?.[p]&&Object.values(allPreds[m[0]][p]).some(v=>v));
-  const optLbl = v=>v==='SG'?'Sin goles':v==='L'?'Local':v==='E'?'Empate':v==='S'?'Sí':v==='N'?'No':'Visita';
+  const optLbl = v=>v==='SG'?'Sin goles':v==='ST'?'Sin tarjetas':v==='L'?'Local':v==='E'?'Empate':v==='S'?'Sí':v==='N'?'No':'Visita';
   const cats = isElim ? CATS_ELIM : CATS;
 
   const handleVote = (id,k,v) => {
@@ -602,7 +602,7 @@ function getNextMatches(fdgResults, elimResults, n=3) {
     .slice(0,n);
 }
 
-function ProximosPartidos({ fdg, elim }) {
+function ProximosPartidos({ fdg, elim, onNavigate }) {
   const next = getNextMatches(fdg.results, elim.results, 3);
   const e = React.createElement;
   if (!next.length) return null;
@@ -610,13 +610,24 @@ function ProximosPartidos({ fdg, elim }) {
     e('div', {className:'sec'}, '📅 Próximos partidos'),
     e('div', {style:{display:'flex',flexDirection:'column',gap:6}},
       next.map(m =>
-        e('div', {key:m.id, style:{background:'#fff',border:'1px solid #e2e8f0',borderRadius:10,padding:'8px 12px',display:'flex',flexDirection:'column',gap:3}},
+        e('div', {
+          key:m.id,
+          onClick: () => onNavigate && onNavigate(m),
+          style:{background:'#fff',border:'1px solid #e2e8f0',borderRadius:10,padding:'8px 12px',
+            display:'flex',flexDirection:'column',gap:3,cursor:'pointer',
+            transition:'box-shadow .15s',boxShadow:'none'}
+          ,onMouseEnter:ev=>ev.currentTarget.style.boxShadow='0 2px 8px rgba(15,28,63,.10)'
+          ,onMouseLeave:ev=>ev.currentTarget.style.boxShadow='none'
+        },
           e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8}},
             e('div', {style:{fontWeight:500,fontSize:13,color:'#1e293b',flex:1,minWidth:0}},
               e('span',{style:{color:'#94a3b8',fontSize:11,marginRight:4}},'#'+m.id),
               m.local, e('span',{style:{color:'#94a3b8',margin:'0 5px',fontSize:11}},'vs'), m.visita
             ),
-            e(Chips,{code:m.bcCode})
+            e('div',{style:{display:'flex',alignItems:'center',gap:6}},
+              e(Chips,{code:m.bcCode}),
+              e('span',{style:{fontSize:10,color:'#94a3b8'}},m.type==='elim'?'→ Elim':'→ Grupos')
+            )
           ),
           e('div', {style:{fontSize:10,color:'#64748b',display:'flex',gap:8,flexWrap:'wrap'}},
             e('span',null,'🗓 '+m.label),
@@ -649,7 +660,7 @@ function getEliminatedTeams(fR, eR) {
   });
   return eliminated;
 }
-function Tabla({ fdg, elim, champ }) {
+function Tabla({ fdg, elim, champ, onNavigate }) {
   const e=React.createElement;
   const eliminated = getEliminatedTeams(fdg.results, elim.results);
 
@@ -720,7 +731,7 @@ function Tabla({ fdg, elim, champ }) {
       runnerTeam&&e('span',{style:{color:'#9CA3AF',fontSize:12}},'🥈 '+runnerTeam)
     ),
     !champTeam&&champ.real&&e('div',{style:{background:'#0F1C3F',color:'#F59E0B',borderRadius:8,padding:'8px 13px',marginTop:8,fontFamily:'Georgia,serif',fontSize:13}},'🏆 Campeón: '+champ.real),
-    e(ProximosPartidos,{fdg,elim}),
+    e(ProximosPartidos,{fdg,elim,onNavigate}),
     e('div',{className:'hint'},e('span',null,'Canales Chile:'),...Object.entries(CH).map(([k,{bg,tx,nm}])=>e('span',{key:k,style:{fontSize:10,fontWeight:700,padding:'2px 5px',borderRadius:3,background:bg,color:tx}},nm)),e('span',null,'· El campeón no suma puntos'))
   );
 }
@@ -1048,9 +1059,12 @@ function B3AdminPanel({ elim, fdg, onResult }) {
   );
 }
 
-function EliminatoriasView({ user, isAdmin, elim, fdg, onVote, onResult }) {
-  const [tab, setTab] = React.useState('fixture');
-  const [rnd,setRnd]=React.useState('R32');
+function EliminatoriasView({ user, isAdmin, elim, fdg, onVote, onResult, initTab, initRnd }) {
+  const [tab, setTab] = React.useState(initTab||'fixture');
+  const [rnd,setRnd]=React.useState(initRnd||'R32');
+  // Sync if parent updates initTab/initRnd (navigation from Tabla)
+  React.useEffect(()=>{ if(initTab){ setTab(initTab); } },[initTab]);
+  React.useEffect(()=>{ if(initRnd){ setRnd(initRnd); } },[initRnd]);
   const e=React.createElement;
   const b3assigned = getB3Slots(elim.results);
 
@@ -1176,6 +1190,8 @@ function App() {
   const [user,setUser]=useState(()=>{try{return localStorage.getItem('cn_user');}catch{return null;}});
   const [isAdmin,setIsAdmin]=useState(()=>{try{return localStorage.getItem('cn_admin')==='1';}catch{return false;}});
   const [tab,setTab]=useState('tabla');
+  const [elimRnd,setElimRnd]=useState('R32');
+  const [elimTab,setElimTab]=useState('fixture');
   const [fdg,setFdg]=useState(E0());
   const [elim,setElim]=useState(E0());
   const [champ,setChamp]=useState({votes:{},real:null});
@@ -1196,6 +1212,16 @@ function App() {
   useEffect(()=>{loadAll();const t=setInterval(loadAll,20000);return()=>clearInterval(t);},[loadAll]);
 
   const handleSync=async()=>{setSyncing(true);await loadAll();setSyncing(false);};
+  const onNavigate = (m) => {
+    if(m.type==='elim'){
+      // Find the rnd for this elim match
+      const em = ELIM.find(x=>x[0]===m.id);
+      if(em){ setElimRnd(em[1]); setElimTab('partidos'); }
+      setTab('elim');
+    } else {
+      setTab('grupos');
+    }
+  };
   const login=(n,a)=>{setUser(n);setIsAdmin(a);try{localStorage.setItem('cn_user',n);localStorage.setItem('cn_admin',a?'1':'0');}catch{}};
 
   const vote=useCallback((id,k,v,type='fdg')=>{
@@ -1246,10 +1272,10 @@ function App() {
       )
     ),
     e('div',{className:'nav'},...tabs.map(t=>e('button',{key:t.id,className:`ntab${tab===t.id?' on':''}`,onClick:()=>setTab(t.id)},t.l))),
-    tab==='tabla'&&e(Tabla,{fdg,elim,champ}),
+    tab==='tabla'&&e(Tabla,{fdg,elim,champ,onNavigate}),
     tab==='grupos'&&e(GruposView,{user,isAdmin,fdg,onVote:vote,onResult:result}),
     tab==='pos'&&e(PosicionesView,{fdg}),
-    tab==='elim'&&e(EliminatoriasView,{user,isAdmin,elim,fdg,onVote:vote,onResult:result}),
+    tab==='elim'&&e(EliminatoriasView,{user,isAdmin,elim,fdg,onVote:vote,onResult:result,initTab:elimTab,initRnd:elimRnd}),
     tab==='camp'&&e(CampeonView,{user,isAdmin,champ,onVote:cVote,onReal:cReal}),
     tab==='reglas'&&e(ReglasView,null)
   );
