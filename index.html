@@ -317,7 +317,8 @@ const css = `
   .vb { padding:3px 8px; border-radius:5px; border:1px solid #e2e8f0; background:#f1f5f9; color:#1e293b; font-size:11px; font-weight:500; cursor:pointer; white-space:nowrap; font-family:inherit; }
   .vb.sel { background:#0F1C3F; border-color:#F59E0B; color:#F59E0B; }
   .vb.ok { background:#15803D; border-color:#15803D; color:#fff; }
-  .vb.bad { opacity:.35; }
+  .vb.ok-border { background:#fff; border:2px solid #15803D; color:#15803D; font-weight:700; }
+  .vb.bad { background:#FEE2E2; border-color:#DC2626; color:#DC2626; font-weight:700; }
   .vb.lk { cursor:not-allowed; opacity:.45; pointer-events:none; }
   .ti { padding:3px 7px; border-radius:5px; border:1px solid #e2e8f0; background:#f1f5f9; color:#1e293b; font-size:12px; width:68px; font-family:inherit; }
   .ti.ok { border-color:#16A34A; color:#16A34A; }
@@ -489,9 +490,11 @@ function MatchCard({ m, isAdmin, user, allPreds, result, onVote, onResult, isEli
           e('div',{style:{display:'flex',gap:3,flexWrap:'wrap'}},
             cat.o.map(([v])=>{
               const isSel=cp===v, isOk=cr&&v===cr, isBad=cr&&isSel&&v!==cr;
+              const wrongAndCorrect=cr&&!isSel&&isOk&&cp&&cp!==cr; // correct option when user picked wrong
               let cls='vb';
-              if(isOk&&isSel) cls+=' ok';
-              else if(isBad) cls+=' bad';
+              if(isOk&&isSel) cls+=' ok';           // voted correctly → green filled
+              else if(isBad) cls+=' bad';             // voted wrongly → red filled
+              else if(wrongAndCorrect) cls+=' ok-border'; // correct option user missed → green border
               else if(isSel) cls+=' sel';
               if(locked) cls+=' lk';
               return e('button',{key:v,className:cls,onClick:()=>!locked&&!isAdmin&&handleVote(m[0],cat.k,v)},optLbl(v));
@@ -528,8 +531,9 @@ function MatchCard({ m, isAdmin, user, allPreds, result, onVote, onResult, isEli
         e('div',{style:{display:'flex',gap:3}},
           [['S','Sí'],['N','No']].map(([v,lb])=>{
             const isSel=pred.ala===v, isOk=res.ala&&v===res.ala, isBad=res.ala&&isSel&&v!==res.ala;
+            const wrongAndCorrect=res.ala&&!isSel&&isOk&&pred.ala&&pred.ala!==res.ala;
             let cls='vb';
-            if(isOk&&isSel)cls+=' ok'; else if(isBad)cls+=' bad'; else if(isSel)cls+=' sel';
+            if(isOk&&isSel)cls+=' ok'; else if(isBad)cls+=' bad'; else if(wrongAndCorrect)cls+=' ok-border'; else if(isSel)cls+=' sel';
             if(locked)cls+=' lk';
             return e('button',{key:v,className:cls,onClick:()=>!locked&&!isAdmin&&handleVote(m[0],'ala',v)},lb);
           })
@@ -546,8 +550,9 @@ function MatchCard({ m, isAdmin, user, allPreds, result, onVote, onResult, isEli
         e('div',{style:{display:'flex',gap:3}},
           [['S','Sí'],['N','No']].map(([v,lb])=>{
             const isSel=pred.pen===v, isOk=res.pen&&v===res.pen, isBad=res.pen&&isSel&&v!==res.pen;
+            const wrongAndCorrect=res.pen&&!isSel&&isOk&&pred.pen&&pred.pen!==res.pen;
             let cls='vb';
-            if(isOk&&isSel)cls+=' ok'; else if(isBad)cls+=' bad'; else if(isSel)cls+=' sel';
+            if(isOk&&isSel)cls+=' ok'; else if(isBad)cls+=' bad'; else if(wrongAndCorrect)cls+=' ok-border'; else if(isSel)cls+=' sel';
             if(locked)cls+=' lk';
             return e('button',{key:v,className:cls,onClick:()=>!locked&&!isAdmin&&handleVote(m[0],'pen',v)},lb);
           })
