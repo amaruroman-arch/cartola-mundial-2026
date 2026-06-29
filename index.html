@@ -141,9 +141,9 @@ const GR = {"A":[["MÉXICO","🇲🇽"],["COREA DEL SUR","🇰🇷"],["SUDÁFRIC
 const ALL_TEAMS = [...new Set(Object.values(GR).flat().map(([n])=>n))].sort();
 const GK = ['A','B','C','D','E','F','G','H','I','J','K','L'];
 const RL = {R32:'Ronda 32','8vos':'Octavos','4tos':'Cuartos',Semi:'Semifinal','3er':'3er Lugar',Final:'FINAL'};
-const CATS = [{k:'g',l:'GANADOR',o:[['L','Local'],['E','Empate'],['V','Visita']],p:3},{k:'gol',l:'1° GOL',o:[['L','Local'],['V','Visita'],['SG','Sin goles']],p:1},{k:'rem',l:'REMATES',o:[['L','Local'],['V','Visita']],p:1},{k:'fal',l:'FALTAS',o:[['L','Local'],['V','Visita']],p:1},{k:'off',l:'OFFSIDES',o:[['L','Local'],['V','Visita']],p:1},{k:'tar',l:'1ERA TARJETA',o:[['L','Local'],['V','Visita'],['ST','Sin tarjetas']],p:1}];
+const CATS = [{k:'g',l:'GANADOR',o:[['L','Local'],['E','Empate'],['V','Visita']],p:3},{k:'gol',l:'1° GOL',o:[['L','Local'],['V','Visita'],['SG','Sin goles']],p:1},{k:'rem',l:'REMATES',o:[['L','Local'],['V','Visita']],p:1},{k:'fal',l:'FALTAS',o:[['L','Local'],['V','Visita']],p:1},{k:'off',l:'OFFSIDES',o:[['L','Local'],['V','Visita']],p:1},{k:'tar',l:'TARJETAS',o:[['L','Local'],['V','Visita']],p:1}];
 // Eliminatorias: Ganador sin Empate + categorías extras
-const CATS_ELIM = [{k:'g',l:'GANADOR',o:[['L','Local'],['V','Visita']],p:3},{k:'gol',l:'1° GOL',o:[['L','Local'],['V','Visita'],['SG','Sin goles']],p:1},{k:'rem',l:'REMATES',o:[['L','Local'],['E','Empate'],['V','Visita']],p:1},{k:'fal',l:'FALTAS',o:[['L','Local'],['E','Empate'],['V','Visita']],p:1},{k:'off',l:'OFFSIDES',o:[['L','Local'],['E','Empate'],['V','Visita']],p:1},{k:'tar',l:'1ERA TARJETA',o:[['L','Local'],['V','Visita'],['ST','Sin tarjetas']],p:1},{k:'ala',l:'¿ALARGUE?',o:[['S','Sí'],['N','No']],p:2},{k:'pen',l:'¿PENALES?',o:[['S','Sí'],['N','No']],p:2}];
+const CATS_ELIM = [{k:'g',l:'GANADOR',o:[['L','Local'],['V','Visita']],p:3},{k:'gol',l:'1° GOL',o:[['L','Local'],['V','Visita'],['SG','Sin goles']],p:1},{k:'rem',l:'REMATES',o:[['L','Local'],['E','Empate'],['V','Visita']],p:1},{k:'fal',l:'FALTAS',o:[['L','Local'],['E','Empate'],['V','Visita']],p:1},{k:'off',l:'OFFSIDES',o:[['L','Local'],['E','Empate'],['V','Visita']],p:1},{k:'tar',l:'TARJETAS',o:[['L','Local'],['E','Empate'],['V','Visita']],p:1},]  // ala and pen rendered separately after fin;
 const CH = {DS:{bg:'#0B4D52',tx:'#6EE7E7',nm:'DSports+'},PM:{bg:'#18183A',tx:'#F4D03F',nm:'P+'},CH:{bg:'#B91C1C',tx:'#FECACA',nm:'CHV'},DP:{bg:'#1E3A8A',tx:'#93C5FD',nm:'Disney+'}};
 
 // ── BACKEND: Google Apps Script ──────────────────────────────────────────────
@@ -413,40 +413,44 @@ function MatchCard({ m, isAdmin, user, allPreds, result, onVote, onResult, isEli
   const tV = isElim ? resolveRef(m[4], fRes, eRes, b3assigned||{}, m[0]) : `${m[6]} ${m[4]}`;
   const hasPred = Object.values(pred).some(v=>v);
   const voters = PLAYERS.filter(p=>p!==user&&allPreds?.[m[0]]?.[p]&&Object.values(allPreds[m[0]][p]).some(v=>v));
-  const optLbl = v=>v==='SG'?'Sin goles':v==='ST'?'Sin tarjetas':v==='L'?'Local':v==='E'?'Empate':v==='S'?'Sí':v==='N'?'No':'Visita';
+  const optLbl = v=>v==='SG'?'Sin goles':v==='L'?'Local':v==='E'?'Empate':v==='S'?'Sí':v==='N'?'No':'Visita';
   const cats = isElim ? CATS_ELIM : CATS;
 
   const handleVote = (id,k,v) => {
-    onVote(id,k,v);
-    if(!isElim) return;
-    if(k==='ala'&&v==='N') onVote(id,'pen','N');
-    if(k==='pen'&&v==='S') onVote(id,'ala','S');
+    if(!isElim) { onVote(id,k,v); return; }
+    // Batch correlations atomically
+    const pairs = [[k,v]];
+    if(k==='ala'&&v==='N') pairs.push(['pen','N']);
+    if(k==='pen'&&v==='S') pairs.push(['ala','S']);
+    onVote(id,pairs,null);
   };
   const handleRes90 = v => {
-    onVote(m[0],'res90',v);
+    const pairs = [['res90',v]];
     const p=v.trim().split('-').map(Number);
     if(p.length===2&&p.every(x=>!isNaN(x))&&p[0]!==p[1]){
-      onVote(m[0],'ala','N'); onVote(m[0],'pen','N');
-      onVote(m[0],'fin',v); onVote(m[0],'g',p[0]>p[1]?'L':'V');
+      pairs.push(['ala','N'],['pen','N'],['fin',v],['g',p[0]>p[1]?'L':'V']);
     }
+    onVote(m[0],pairs,null);
   };
   const handleFin = v => {
-    onVote(m[0],'fin',v);
+    const pairs = [['fin',v]];
     const p=v.trim().split('-').map(Number);
-    if(p.length===2&&p.every(x=>!isNaN(x))&&p[0]!==p[1]) onVote(m[0],'g',p[0]>p[1]?'L':'V');
+    if(p.length===2&&p.every(x=>!isNaN(x))&&p[0]!==p[1]) pairs.push(['g',p[0]>p[1]?'L':'V']);
+    onVote(m[0],pairs,null);
   };
   const handleAdminFin = v => {
-    onResult(m[0],'fin',v);
+    const pairs = [['fin',v]];
     const p=v.trim().split('-').map(Number);
-    if(p.length===2&&p.every(x=>!isNaN(x))&&p[0]!==p[1]) onResult(m[0],'g',p[0]>p[1]?'L':'V');
+    if(p.length===2&&p.every(x=>!isNaN(x))&&p[0]!==p[1]) pairs.push(['g',p[0]>p[1]?'L':'V']);
+    onResult(m[0],pairs,null);
   };
   const handleAdminRes90 = v => {
-    onResult(m[0],'res90',v);
+    const pairs = [['res90',v]];
     const p=v.trim().split('-').map(Number);
     if(p.length===2&&p.every(x=>!isNaN(x))&&p[0]!==p[1]){
-      onResult(m[0],'ala','N'); onResult(m[0],'pen','N');
-      onResult(m[0],'fin',v); onResult(m[0],'g',p[0]>p[1]?'L':'V');
+      pairs.push(['ala','N'],['pen','N'],['fin',v],['g',p[0]>p[1]?'L':'V']);
     }
+    onResult(m[0],pairs,null);
   };
   const e = React.createElement;
 
@@ -517,6 +521,42 @@ function MatchCard({ m, isAdmin, user, allPreds, result, onVote, onResult, isEli
         fbBadge(res.fin,catResult('fin',pred,res),1),
         e('input',{className:'ti'+tiFeedback(res.fin,pred.fin),placeholder:'2-1',value:pred.fin||'',readOnly:locked||isAdmin,onChange:ev=>!locked&&!isAdmin&&(isElim?handleFin(ev.target.value):onVote(m[0],'fin',ev.target.value))}),
         res.fin&&e('span',{style:{fontSize:10,color:'#94a3b8',marginLeft:4}},'Real: '+res.fin)
+      ),
+      isElim&&e('div',{key:'ala',className:'cr'},
+        e('span',{className:'cl'},'¿ALARGUE?'),
+        fbBadge(res.ala,catResult('ala',pred,res),2),
+        e('div',{style:{display:'flex',gap:3}},
+          [['S','Sí'],['N','No']].map(([v,lb])=>{
+            const isSel=pred.ala===v, isOk=res.ala&&v===res.ala, isBad=res.ala&&isSel&&v!==res.ala;
+            let cls='vb';
+            if(isOk&&isSel)cls+=' ok'; else if(isBad)cls+=' bad'; else if(isSel)cls+=' sel';
+            if(locked)cls+=' lk';
+            return e('button',{key:v,className:cls,onClick:()=>!locked&&!isAdmin&&handleVote(m[0],'ala',v)},lb);
+          })
+        ),
+        e('div',{style:{display:'flex',gap:2,marginLeft:3}},
+          PLAYERS.filter(p=>p!==user&&allPreds?.[m[0]]?.[p]?.ala).map(p=>
+            e('span',{key:p,style:{width:8,height:8,borderRadius:'50%',background:PC[p],display:'inline-block'},title:p+' ya votó'})
+          )
+        )
+      ),
+      isElim&&e('div',{key:'pen',className:'cr'},
+        e('span',{className:'cl'},'¿PENALES?'),
+        fbBadge(res.pen,catResult('pen',pred,res),2),
+        e('div',{style:{display:'flex',gap:3}},
+          [['S','Sí'],['N','No']].map(([v,lb])=>{
+            const isSel=pred.pen===v, isOk=res.pen&&v===res.pen, isBad=res.pen&&isSel&&v!==res.pen;
+            let cls='vb';
+            if(isOk&&isSel)cls+=' ok'; else if(isBad)cls+=' bad'; else if(isSel)cls+=' sel';
+            if(locked)cls+=' lk';
+            return e('button',{key:v,className:cls,onClick:()=>!locked&&!isAdmin&&handleVote(m[0],'pen',v)},lb);
+          })
+        ),
+        e('div',{style:{display:'flex',gap:2,marginLeft:3}},
+          PLAYERS.filter(p=>p!==user&&allPreds?.[m[0]]?.[p]?.pen).map(p=>
+            e('span',{key:p,style:{width:8,height:8,borderRadius:'50%',background:PC[p],display:'inline-block'},title:p+' ya votó'})
+          )
+        )
       ),
       isAdmin&&e('div',{className:'adm'},
         e('div',{className:'adm-t'},'🔧 ADMIN — Resultado real'),
@@ -602,7 +642,7 @@ function getNextMatches(fdgResults, elimResults, n=3) {
     .slice(0,n);
 }
 
-function ProximosPartidos({ fdg, elim, onNavigate }) {
+function ProximosPartidos({ fdg, elim }) {
   const next = getNextMatches(fdg.results, elim.results, 3);
   const e = React.createElement;
   if (!next.length) return null;
@@ -610,24 +650,13 @@ function ProximosPartidos({ fdg, elim, onNavigate }) {
     e('div', {className:'sec'}, '📅 Próximos partidos'),
     e('div', {style:{display:'flex',flexDirection:'column',gap:6}},
       next.map(m =>
-        e('div', {
-          key:m.id,
-          onClick: () => onNavigate && onNavigate(m),
-          style:{background:'#fff',border:'1px solid #e2e8f0',borderRadius:10,padding:'8px 12px',
-            display:'flex',flexDirection:'column',gap:3,cursor:'pointer',
-            transition:'box-shadow .15s',boxShadow:'none'}
-          ,onMouseEnter:ev=>ev.currentTarget.style.boxShadow='0 2px 8px rgba(15,28,63,.10)'
-          ,onMouseLeave:ev=>ev.currentTarget.style.boxShadow='none'
-        },
+        e('div', {key:m.id, style:{background:'#fff',border:'1px solid #e2e8f0',borderRadius:10,padding:'8px 12px',display:'flex',flexDirection:'column',gap:3}},
           e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8}},
             e('div', {style:{fontWeight:500,fontSize:13,color:'#1e293b',flex:1,minWidth:0}},
               e('span',{style:{color:'#94a3b8',fontSize:11,marginRight:4}},'#'+m.id),
               m.local, e('span',{style:{color:'#94a3b8',margin:'0 5px',fontSize:11}},'vs'), m.visita
             ),
-            e('div',{style:{display:'flex',alignItems:'center',gap:6}},
-              e(Chips,{code:m.bcCode}),
-              e('span',{style:{fontSize:10,color:'#94a3b8'}},m.type==='elim'?'→ Elim':'→ Grupos')
-            )
+            e(Chips,{code:m.bcCode})
           ),
           e('div', {style:{fontSize:10,color:'#64748b',display:'flex',gap:8,flexWrap:'wrap'}},
             e('span',null,'🗓 '+m.label),
@@ -660,7 +689,7 @@ function getEliminatedTeams(fR, eR) {
   });
   return eliminated;
 }
-function Tabla({ fdg, elim, champ, onNavigate }) {
+function Tabla({ fdg, elim, champ }) {
   const e=React.createElement;
   const eliminated = getEliminatedTeams(fdg.results, elim.results);
 
@@ -731,7 +760,7 @@ function Tabla({ fdg, elim, champ, onNavigate }) {
       runnerTeam&&e('span',{style:{color:'#9CA3AF',fontSize:12}},'🥈 '+runnerTeam)
     ),
     !champTeam&&champ.real&&e('div',{style:{background:'#0F1C3F',color:'#F59E0B',borderRadius:8,padding:'8px 13px',marginTop:8,fontFamily:'Georgia,serif',fontSize:13}},'🏆 Campeón: '+champ.real),
-    e(ProximosPartidos,{fdg,elim,onNavigate}),
+    e(ProximosPartidos,{fdg,elim}),
     e('div',{className:'hint'},e('span',null,'Canales Chile:'),...Object.entries(CH).map(([k,{bg,tx,nm}])=>e('span',{key:k,style:{fontSize:10,fontWeight:700,padding:'2px 5px',borderRadius:3,background:bg,color:tx}},nm)),e('span',null,'· El campeón no suma puntos'))
   );
 }
@@ -995,88 +1024,14 @@ function FixtureBracket({ elim, fdg }) {
   );
 }
 
-function B3AdminPanel({ elim, fdg, onResult }) {
-  const e = React.createElement;
-  const fRes = fdg.results || {};
-  const eRes = elim.results || {};
-  const b3slots = getB3Slots(eRes);
-  const b3ranking = getBestThirds(fRes);
-  const groupsDone = GK.filter(g => { const s=calcStandings(g,fRes); return s.length>0&&s[0].pj===3; }).length;
-
-  // Partidos con "Mejor 3°"
-  const b3matches = ELIM.filter(m => m[3]==='Mejor 3°' || m[4]==='Mejor 3°');
-
-  const saveSlot = (matchId, teamStr) => {
-    // teamStr: "🇦🇷 ARGENTINA" → split en bandera y nombre
-    const parts = teamStr.trim().split(' ');
-    const f = parts[0];
-    const n = parts.slice(1).join(' ');
-    const newSlots = {...b3slots, [matchId]: {f, n}};
-    onResult('b3slots', null, JSON.stringify(newSlots));
-  };
-  const clearSlot = (matchId) => {
-    const newSlots = {...b3slots};
-    delete newSlots[matchId];
-    onResult('b3slots', null, JSON.stringify(newSlots));
-  };
-
-  return e('div',{style:{background:'#0F1C3F',border:'1px solid #1E3A6B',borderRadius:12,padding:12,marginBottom:10}},
-    e('div',{style:{fontWeight:700,color:'#F59E0B',fontSize:12,marginBottom:6}},'🔧 ADMIN · Asignación de Mejores Terceros'),
-    e('div',{style:{fontSize:10,color:'#64748b',marginBottom:8}},
-      `Grupos terminados: ${groupsDone}/12. `+
-      (groupsDone<12 ? 'Espera a que terminen todos los grupos.' :
-        'La FIFA publicará los cruces oficiales según el Anexo C (495 combinaciones). Asígnalos aquí.')
-    ),
-    groupsDone >= 8 && e('div',{style:{marginBottom:8}},
-      e('div',{style:{fontSize:10,color:'#F59E0B',fontWeight:600,marginBottom:4}},'Ranking actual (top 8 clasifican):'),
-      b3ranking.slice(0,12).map((t,i) =>
-        e('div',{key:t.n,style:{display:'flex',alignItems:'center',gap:6,padding:'2px 0',opacity:i>=8?0.4:1}},
-          e('span',{style:{fontSize:10,color:i<8?'#F59E0B':'#94a3b8',minWidth:16,fontWeight:700}},i+1+'.'),
-          e('span',{style:{fontSize:11,color:'#e2e8f0'}},`${t.f} ${t.n}`),
-          e('span',{style:{fontSize:9,color:'#64748b'}},'Gr.'+t.grp),
-          e('span',{style:{fontSize:9,color:'#94a3b8'}},`${t.pts}pts DG${t.dg>0?'+':''}${t.dg} GF${t.gf} Tarj${t.tj}`)
-        )
-      )
-    ),
-    e('div',{style:{fontSize:10,color:'#F59E0B',fontWeight:600,marginBottom:6,marginTop:8}},'Asignar a cada partido:'),
-    b3matches.map(m =>
-      e('div',{key:m[0],style:{display:'flex',alignItems:'center',gap:6,marginBottom:6,flexWrap:'wrap'}},
-        e('span',{style:{fontSize:10,color:'#94a3b8',minWidth:60}},'P'+m[0]+' ('+m[2].split(' ')[0]+')'),
-        e('select',{
-          value: b3slots[m[0]] ? `${b3slots[m[0]].f} ${b3slots[m[0]].n}` : '',
-          onChange: ev => ev.target.value ? saveSlot(m[0], ev.target.value) : clearSlot(m[0]),
-          style:{flex:1,minWidth:140,padding:'4px 6px',borderRadius:6,border:'1px solid #1E3A6B',background:'#060e1f',color:'#e2e8f0',fontSize:11,fontFamily:'inherit'}
-        },
-          e('option',{value:''},'— Sin asignar —'),
-          b3ranking.map((t,i) => e('option',{key:t.n,value:`${t.f} ${t.n}`},`${i+1}. ${t.f} ${t.n} (Gr.${t.grp}, ${t.pts}pts DG${t.dg>=0?'+':''}${t.dg})`))
-        ),
-        b3slots[m[0]] && e('button',{
-          onClick:()=>clearSlot(m[0]),
-          style:{fontSize:9,padding:'2px 6px',borderRadius:4,border:'1px solid #334155',background:'#1e293b',color:'#94a3b8',cursor:'pointer'}
-        },'✕')
-      )
-    )
-  );
-}
-
-function EliminatoriasView({ user, isAdmin, elim, fdg, onVote, onResult, initTab, initRnd }) {
-  const [tab, setTab] = React.useState(initTab||'fixture');
-  const [rnd,setRnd]=React.useState(initRnd||'R32');
-  // Sync if parent updates initTab/initRnd (navigation from Tabla)
-  React.useEffect(()=>{ if(initTab){ setTab(initTab); } },[initTab]);
-  React.useEffect(()=>{ if(initRnd){ setRnd(initRnd); } },[initRnd]);
+function EliminatoriasView({ user, isAdmin, elim, fdg, onVote, onResult }) {
+  const [tab, setTab] = React.useState('fixture');
+  const [rnd,setRnd]=React.useState('R32');
   const e=React.createElement;
   const b3assigned = getB3Slots(elim.results);
 
-  // onResult especial para b3slots: guarda en elim.results.b3slots
-  const onB3Result = (key, _k, valStr) => {
-    const newResults = {...(elim.results||{}), b3slots: JSON.parse(valStr)};
-    onResult('__b3slots__', null, newResults);
-  };
-
   return e('div',{className:'view'},
     e('div',{className:'sec'},'🏟️ Eliminatorias'),
-    isAdmin && e(B3AdminPanel,{elim,fdg,onResult:onB3Result}),
     e('div',{className:'filt'},
       e('button',{className:`fb${tab==='fixture'?' on':''}`,onClick:()=>setTab('fixture')},'🗂 Fixture'),
       ...['R32','8vos','4tos','Semi','3er','Final'].map(r=>e('button',{key:r,className:`fb${tab==='partidos'&&rnd===r?' on':''}`,onClick:()=>{setTab('partidos');setRnd(r);}},RL[r]||r))
@@ -1190,8 +1145,6 @@ function App() {
   const [user,setUser]=useState(()=>{try{return localStorage.getItem('cn_user');}catch{return null;}});
   const [isAdmin,setIsAdmin]=useState(()=>{try{return localStorage.getItem('cn_admin')==='1';}catch{return false;}});
   const [tab,setTab]=useState('tabla');
-  const [elimRnd,setElimRnd]=useState('R32');
-  const [elimTab,setElimTab]=useState('fixture');
   const [fdg,setFdg]=useState(E0());
   const [elim,setElim]=useState(E0());
   const [champ,setChamp]=useState({votes:{},real:null});
@@ -1212,31 +1165,42 @@ function App() {
   useEffect(()=>{loadAll();const t=setInterval(loadAll,20000);return()=>clearInterval(t);},[loadAll]);
 
   const handleSync=async()=>{setSyncing(true);await loadAll();setSyncing(false);};
-  const onNavigate = (m) => {
-    if(m.type==='elim'){
-      // Find the rnd for this elim match
-      const em = ELIM.find(x=>x[0]===m.id);
-      if(em){ setElimRnd(em[1]); setElimTab('partidos'); }
-      setTab('elim');
-    } else {
-      setTab('grupos');
-    }
-  };
   const login=(n,a)=>{setUser(n);setIsAdmin(a);try{localStorage.setItem('cn_user',n);localStorage.setItem('cn_admin',a?'1':'0');}catch{}};
 
-  const vote=useCallback((id,k,v,type='fdg')=>{
+  // vote(id, k, v, type) — single field
+  // vote(id, [[k1,v1],[k2,v2],...], null, type) — batch fields atomically
+  const vote=useCallback((id,kOrPairs,v,type='fdg')=>{
     const [setD,ref,KEY]=type==='fdg'?[setFdg,fdgRef,SK.fdg]:[setElim,elimRef,SK.elim];
-    setD(prev=>{const next={preds:{...prev.preds,[id]:{...prev.preds[id],[user]:{...(prev.preds[id]?.[user]||{}),[k]:v}}},results:prev.results};lsSet(KEY,{preds:{...ref.current.preds,[id]:{...ref.current.preds[id],[user]:{...(ref.current.preds[id]?.[user]||{}),[k]:v}}},results:ref.current.results});return next;});
+    const pairs = Array.isArray(kOrPairs) ? kOrPairs : [[kOrPairs,v]];
+    setD(prev=>{
+      const userPrev = prev.preds[id]?.[user] || {};
+      const userNext = {...userPrev};
+      pairs.forEach(([k,val])=>{ userNext[k]=val; });
+      const newPreds = {...prev.preds,[id]:{...prev.preds[id],[user]:userNext}};
+      const next = {preds:newPreds, results:prev.results};
+      // lsSet uses the freshly computed state, not stale ref
+      lsSet(KEY,{preds:newPreds, results:ref.current.results});
+      return next;
+    });
   },[user]);
 
-  const result=useCallback((id,k,v,type='fdg')=>{
+  // result(id, kOrPairs, v, type) — single or batch field updates for results
+  const result=useCallback((id,kOrPairs,v,type='fdg')=>{
     const [setD,ref,KEY]=type==='fdg'?[setFdg,fdgRef,SK.fdg]:[setElim,elimRef,SK.elim];
     if(id==='__b3slots__') {
-      // v is the full new results object with b3slots already merged
       setD(prev=>{const next={preds:prev.preds,results:v};lsSet(KEY,{preds:ref.current.preds,results:v});return next;});
       return;
     }
-    setD(prev=>{const next={preds:prev.preds,results:{...prev.results,[id]:{...prev.results[id],[k]:v}}};lsSet(KEY,{preds:ref.current.preds,results:{...ref.current.results,[id]:{...ref.current.results[id],[k]:v}}});return next;});
+    const pairs = Array.isArray(kOrPairs) ? kOrPairs : [[kOrPairs,v]];
+    setD(prev=>{
+      const matchPrev = prev.results[id] || {};
+      const matchNext = {...matchPrev};
+      pairs.forEach(([k,val])=>{ matchNext[k]=val; });
+      const newResults = {...prev.results,[id]:matchNext};
+      const next = {preds:prev.preds, results:newResults};
+      lsSet(KEY,{preds:ref.current.preds, results:newResults});
+      return next;
+    });
   },[]);
 
   const cVote=useCallback(t=>{setChamp(p=>{const n={...p,votes:{...p.votes,[user]:t}};lsSet(SK.champs,{...champRef.current,votes:{...champRef.current.votes,[user]:t}});return n;});},[user]);
@@ -1272,10 +1236,10 @@ function App() {
       )
     ),
     e('div',{className:'nav'},...tabs.map(t=>e('button',{key:t.id,className:`ntab${tab===t.id?' on':''}`,onClick:()=>setTab(t.id)},t.l))),
-    tab==='tabla'&&e(Tabla,{fdg,elim,champ,onNavigate}),
+    tab==='tabla'&&e(Tabla,{fdg,elim,champ}),
     tab==='grupos'&&e(GruposView,{user,isAdmin,fdg,onVote:vote,onResult:result}),
     tab==='pos'&&e(PosicionesView,{fdg}),
-    tab==='elim'&&e(EliminatoriasView,{user,isAdmin,elim,fdg,onVote:vote,onResult:result,initTab:elimTab,initRnd:elimRnd}),
+    tab==='elim'&&e(EliminatoriasView,{user,isAdmin,elim,fdg,onVote:vote,onResult:result}),
     tab==='camp'&&e(CampeonView,{user,isAdmin,champ,onVote:cVote,onReal:cReal}),
     tab==='reglas'&&e(ReglasView,null)
   );
