@@ -705,15 +705,18 @@ function getEliminatedTeams(fR, eR) {
 function Tabla({ fdg, elim, champ, onNavigate }) {
   const e=React.createElement;
   const eliminated = getEliminatedTeams(fdg.results, elim.results);
+  const fR=fdg.results||{}, eR=elim.results||{}, b3=getB3Slots(eR);
 
-  // Find champion and runner-up from final result
-  const finalRes = elim.results?.[104];
+  // Is the tournament finished? (final played)
+  const finalPlayed = !!(eR[104]?.g || eR[104]?.fin);
+
+  // Find champion and runner-up teams from final result
   let champTeam=null, runnerTeam=null;
-  if(finalRes?.fin && finalRes?.g) {
-    const m=ELIM.find(x=>x[0]===104);
-    if(m){
-      const fR=fdg.results||{}, eR=elim.results||{}, b3=getB3Slots(eR);
-      const tL=resolveRef(m[3],fR,eR,b3,104), tV=resolveRef(m[4],fR,eR,b3,104);
+  const finalRes = eR[104];
+  if(finalRes?.g) {
+    const mf=ELIM.find(x=>x[0]===104);
+    if(mf){
+      const tL=resolveRef(mf[3],fR,eR,b3,104), tV=resolveRef(mf[4],fR,eR,b3,104);
       champTeam = finalRes.g==='L'?tL:tV;
       runnerTeam = finalRes.g==='L'?tV:tL;
     }
@@ -725,56 +728,104 @@ function Tabla({ fdg, elim, champ, onNavigate }) {
     ELIM.forEach(m=>{eP+=scoreMatch(elim.preds?.[m[0]]?.[p],elim.results?.[m[0]],true);});
     const cv=champ.votes?.[p], cr=champ.real;
     const ok=cv&&cr&&cv.toUpperCase()===cr.toUpperCase();
-    // Check if chosen champion is still alive
     const cvElim = cv && eliminated.has(cv);
-    // Find how far chosen team got (count wins in elim)
+    // Count how many elim rounds the chosen team won
     let cvFar = 0;
     if(cv) ELIM.forEach(m=>{
-      const r=elim.results?.[m[0]];
-      if(!r?.fin) return;
-      const [gl,gv]=r.fin.split('-').map(Number);
-      if(isNaN(gl)||isNaN(gv)) return;
-      const fR=fdg.results||{}, eR=elim.results||{}, b3=getB3Slots(eR);
-      const winner=gl>gv?resolveRef(m[3],fR,eR,b3,m[0]):resolveRef(m[4],fR,eR,b3,m[0]);
-      if(winner.toUpperCase().includes(cv.toUpperCase())||cv.toUpperCase().includes(winner.replace(/^\S+\s/,'').toUpperCase())) cvFar++;
+      const r=eR[m[0]];
+      if(!r?.g) return; // need at least winner declared
+      const winner=r.g==='L'?resolveRef(m[3],fR,eR,b3,m[0]):resolveRef(m[4],fR,eR,b3,m[0]);
+      const wName=winner.replace(/^\S+\s/,'').trim().toUpperCase();
+      const cvUp=cv.toUpperCase();
+      if(wName===cvUp||winner.toUpperCase()===cvUp||cvUp.includes(wName)||wName.includes(cvUp)) cvFar++;
     });
     return{p,fP,eP,total:fP+eP,ok,cv,cvElim,cvFar};
   }).sort((a,b)=>b.total-a.total);
 
-  // Trophy for 1st/2nd in ranking
-  const trophyIcon = (i) => i===0?'🏆':i===1?'🥈':null;
+  // ── Tabla distinctions (only when tournament is over) ──
+  const tableDistinction = (i) => {
+    if(!finalPlayed) return null;
+    if(i===0) return {icon:'🏆', text:'1° Tabla', color:'#F59E0B'};
+    if(i===1) return {icon:'🥈', text:'2° Tabla', color:'#9CA3AF'};
+    if(i===2) return {icon:'🥉', text:'3° Tabla', color:'#CD7F32'};
+    return null;
+  };
+
+  // ── Campeón distinctions based on cvFar (how far team got) ──
+  // Find max cvFar among all players
+  const maxFar = Math.max(...rows.map(r=>r.cvFar));
+  const champDistinction = (r) => {
+    if(!finalPlayed || r.cvFar===0 || maxFar===0) return null;
+    // All players whose team reached the same max round share the title
+    const winners = rows.filter(x=>x.cvFar===maxFar);
+    if(!winners.find(x=>x.p===r.p)) return null;
+    // Check if their team was champion or runner-up
+    const teamName = (r.cv||'').toUpperCase();
+    const isChamp = champTeam && (champTeam.toUpperCase().includes(teamName)||teamName.includes(champTeam.replace(/^\S+\s/,'').trim().toUpperCase()));
+    const isRunner = runnerTeam && (runnerTeam.toUpperCase().includes(teamName)||teamName.includes(runnerTeam.replace(/^\S+\s/,'').trim().toUpperCase()));
+    if(isChamp) return {icon:'🏆', text:'Campeón', color:'#F59E0B'};
+    if(isRunner) return {icon:'🥈', text:'Vicecampeón', color:'#9CA3AF'};
+    // Reached same round as the furthest — use round label
+    const roundLabels = ['','Ronda 32','Octavos','Cuartos','Semifinal','Final/3°','Campeón'];
+    const lbl = roundLabels[Math.min(r.cvFar, roundLabels.length-1)] || `${r.cvFar} rondas`;
+    return {icon:'🏅', text:lbl, color:'#F59E0B'};
+  };
+
+  // Position icon for the # column (always show during tournament, distinctions only at end)
+  const posIcon = (i) => {
+    const colors = ['#F59E0B','#9CA3AF','#CD7F32','#94a3b8'];
+    const icons = ['🏆','🥈','🥉'];
+    return e('div',{style:{fontFamily:'Georgia,serif',fontSize:14,fontWeight:500,textAlign:'center',color:colors[Math.min(i,3)]}},
+      i < 3 ? icons[i] : i+1
+    );
+  };
 
   return e('div',{className:'view'},
     e('div',{className:'sec'},'🏆 Tabla de posiciones'),
     e('div',{className:'tbl'},
       e('div',{className:'trow hd'},...['#','JUGADOR','GRP','ELIM','PTS'].map((h,i)=>e('div',{key:h,style:{fontSize:11,color:i===4?'#fff':'#F59E0B',fontWeight:500,textAlign:i>1?'right':'left'}},h))),
-      rows.map((r,i)=>e('div',{key:r.p,className:'trow'},
-        e('div',{style:{fontFamily:'Georgia,serif',fontSize:14,fontWeight:500,textAlign:'center',color:i===0?'#F59E0B':i===1?'#9CA3AF':i===2?'#CD7F32':'#94a3b8'}},
-          trophyIcon(i) || i+1
-        ),
-        e('div',{style:{minWidth:0}},
-          e('div',{style:{fontWeight:500,fontSize:13,color:PC[r.p]}},r.p),
-          r.cv&&e('div',{style:{fontSize:10,color:'#94a3b8',marginTop:1,display:'flex',alignItems:'center',gap:3,flexWrap:'wrap'}},
-            e('span',null,'🏆 '+r.cv),
-            champ.real
-              ? (r.ok ? e('span',{style:{color:'#16A34A'}},('✓'))  : e('span',{style:{color:'#DC2626'}},'✗'))
-              : r.cvElim
-                ? e('span',{style:{color:'#DC2626',fontSize:9}},'❌ eliminado')
-                : e('span',{style:{color:'#16A34A',fontSize:9}},'✅ en carrera')
-          )
-        ),
-        e('div',{style:{textAlign:'right',fontSize:12,color:'#94a3b8'}},r.fP),
-        e('div',{style:{textAlign:'right',fontSize:12,color:'#94a3b8'}},r.eP),
-        e('div',{style:{textAlign:'right',fontFamily:'Georgia,serif',fontSize:17,fontWeight:500,color:'#F59E0B'}},r.total)
-      ))
+      rows.map((r,i)=>{
+        const tDist = tableDistinction(i);
+        const cDist = champDistinction(r);
+        // Build combined distinction label
+        const badges = [];
+        if(tDist) badges.push({...tDist, src:'tabla'});
+        if(cDist) badges.push({...cDist, src:'camp'});
+        return e('div',{key:r.p,className:'trow'},
+          posIcon(i),
+          e('div',{style:{minWidth:0}},
+            e('div',{style:{fontWeight:500,fontSize:13,color:PC[r.p]}},r.p),
+            // Distinctions row (end of tournament)
+            badges.length>0 && e('div',{style:{display:'flex',gap:4,flexWrap:'wrap',marginTop:2}},
+              badges.map((b,bi)=>e('span',{key:bi,style:{
+                fontSize:9,fontWeight:700,padding:'1px 5px',borderRadius:3,
+                background:b.color==='#F59E0B'?'#FFF7ED':b.color==='#9CA3AF'?'#F8FAFC':'#FFF7ED',
+                color:b.color, border:`1px solid ${b.color}44`,whiteSpace:'nowrap'
+              }},b.icon+' '+b.text))
+            ),
+            // Champion vote status
+            r.cv&&e('div',{style:{fontSize:10,color:'#94a3b8',marginTop:1,display:'flex',alignItems:'center',gap:3,flexWrap:'wrap'}},
+              e('span',null,'🏆 '+r.cv),
+              finalPlayed
+                ? (r.ok ? e('span',{style:{color:'#16A34A'}},'✓') : e('span',{style:{color:'#DC2626'}},'✗'))
+                : r.cvElim
+                  ? e('span',{style:{color:'#DC2626',fontSize:9}},'❌ eliminado')
+                  : e('span',{style:{color:'#16A34A',fontSize:9}},'✅ en carrera')
+            )
+          ),
+          e('div',{style:{textAlign:'right',fontSize:12,color:'#94a3b8'}},r.fP),
+          e('div',{style:{textAlign:'right',fontSize:12,color:'#94a3b8'}},r.eP),
+          e('div',{style:{textAlign:'right',fontFamily:'Georgia,serif',fontSize:17,fontWeight:500,color:'#F59E0B'}},r.total)
+        );
+      })
     ),
     champTeam&&e('div',{style:{background:'#0F1C3F',color:'#F59E0B',borderRadius:8,padding:'8px 13px',marginTop:8,fontFamily:'Georgia,serif',fontSize:13,display:'flex',gap:12,alignItems:'center'}},
       e('span',null,'🏆 '+champTeam),
       runnerTeam&&e('span',{style:{color:'#9CA3AF',fontSize:12}},'🥈 '+runnerTeam)
     ),
-    !champTeam&&champ.real&&e('div',{style:{background:'#0F1C3F',color:'#F59E0B',borderRadius:8,padding:'8px 13px',marginTop:8,fontFamily:'Georgia,serif',fontSize:13}},'🏆 Campeón: '+champ.real),
+    !champTeam&&champ.real&&e('div',{style:{background:'#0F1C3F',color:'#F59E0B',borderRadius:8,padding:'8px 13px',marginTop:8,fontFamily:'Georgia,serif',fontSize:13}},'🏆 Campeón elección: '+champ.real),
     e(ProximosPartidos,{fdg,elim,onNavigate}),
-    e('div',{className:'hint'},e('span',null,'Canales Chile:'),...Object.entries(CH).map(([k,{bg,tx,nm}])=>e('span',{key:k,style:{fontSize:10,fontWeight:700,padding:'2px 5px',borderRadius:3,background:bg,color:tx}},nm)),e('span',null,'· El campeón no suma puntos'))
+    e('div',{className:'hint'},e('span',null,'Canales Chile:'),...Object.entries(CH).map(([k,{bg,tx,nm}])=>e('span',{key:k,style:{fontSize:10,fontWeight:700,padding:'2px 5px',borderRadius:3,background:bg,color:tx}},nm)),e('span',null,'· Puntaje no incluye elección de campeón'))
   );
 }
 
@@ -1135,13 +1186,33 @@ function ReglasView() {
 
       sec('🏆 Elección de Campeón — sin puntos en tabla general'),
       e('div',{style:{fontSize:11,color:'#64748b',lineHeight:1.7}},
-        e('div',null,'• Cada jugador elige un campeón antes de que comience el torneo. No suma puntos.'),
-        e('div',null,'• El ganador de la Cartola es quien tenga más puntos acumulados (grupos + eliminatorias).'),
-        e('div',null,'• 🏆 Copa de oro para el 1° lugar en la tabla de puntos.'),
-        e('div',null,'• 🥈 Copa de plata para el 2° lugar en la tabla de puntos.'),
-        e('div',null,'• El equipo campeón no se desempata por la elección de campeón.'),
-        e('div',null,'• En caso de empate en puntos, gana quien haya acertado más partidos exactos (resultado final correcto).'),
-        e('div',null,'• En la tabla aparece ✅ si el equipo elegido sigue en carrera, ❌ si ya fue eliminado.')
+        e('div',null,'• Cada jugador elige un equipo favorito antes del torneo. Esta elección NO suma puntos a la tabla general.'),
+        e('div',null,'• En la tabla aparece ✅ si el equipo sigue en carrera, ❌ si ya fue eliminado.'),
+        e('div',null,'• Al terminar el torneo se otorgan distinciones separadas:')
+      ),
+
+      sec('🥇 Distinciones al término del torneo'),
+      e('div',{style:{fontSize:11,color:'#64748b',lineHeight:1.9}},
+        e('div',null,e('b',null,'Tabla de puntos (grupos + eliminatorias):')),
+        e('div',null,'  🏆 1° Tabla — al jugador con más puntos acumulados'),
+        e('div',null,'  🥈 2° Tabla — al segundo en puntos'),
+        e('div',null,'  🥉 3° Tabla — al tercero en puntos'),
+        e('div',null,''),
+        e('div',null,e('b',null,'Elección de campeón (equipo que llegó más lejos):')),
+        e('div',null,'  🏆 Campeón — al jugador cuyo equipo llegó más lejos en eliminatorias'),
+        e('div',null,'  🥈 Vicecampeón — si el equipo elegido llegó a la final pero no ganó'),
+        e('div',null,'  🏅 [Ronda] — si varios equipos llegaron igual de lejos, todos reciben distinción de esa ronda'),
+        e('div',null,''),
+        e('div',null,e('b',null,'¿Cómo se determina "quién llegó más lejos"?')),
+        e('div',null,'  El equipo que ganó más partidos en la fase eliminatoria. Si el equipo elegido llegó a semifinal pero fue eliminado, esa es su distinción.'),
+        e('div',null,'  No importa si es el campeón mundial: si tu equipo llegó a cuartos y el de otro llegó a la final, ese otro es "Campeón".'),
+        e('div',null,'  Si dos jugadores eligieron equipos que llegaron igual de lejos (ej: ambos en semifinal), ambos reciben la distinción.'),
+        e('div',null,''),
+        e('div',null,e('b',null,'Combinación de distinciones:')),
+        e('div',null,'  Si un jugador gana en ambas categorías, se muestran ambas. Ej: "🏆 1° Tabla · 🥈 Vicecampeón"'),
+        e('div',null,'  Los tres lugares de la tabla y la distinción de campeón son independientes entre sí.'),
+        e('div',null,''),
+        e('div',null,'• En caso de empate en puntos en la tabla, gana quien haya acertado más resultados finales exactos.')
       ),
 
       sec('⚖️ Empate técnico en categorías'),
