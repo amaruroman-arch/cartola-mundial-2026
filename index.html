@@ -688,17 +688,15 @@ function getEliminatedTeams(fR, eR) {
   const b3slots = getB3Slots(eR||{});
   ELIM.forEach(m => {
     const r = (eR||{})[m[0]];
-    if(!r?.fin) return;
-    const [gl,gv] = r.fin.split('-').map(Number);
-    if(isNaN(gl)||isNaN(gv)) return;
-    // loser
-    const loserRef = gl >= gv ? m[4] : m[3]; // if gl>gv local wins, visita loses
-    if(gl === gv) return; // no loser in draw (penales handled by 'g')
+    // Usamos 'g' (Local/Visita) como fuente de verdad del clasificado —
+    // es lo que el admin marca manualmente y cubre casos de penales
+    // donde el marcador final puede quedar empatado (ej: 1-1, gana por penales)
+    if(!r?.g) return;
+    const loserRef = r.g === 'L' ? m[4] : m[3]; // si ganó Local(L), pierde Visita, y viceversa
     const loserName = resolveRef(loserRef, fR, eR||{}, b3slots, m[0]);
-    // Extract just the team name (remove flag prefix)
     const name = loserName.replace(/^\S+\s/, '').trim();
     eliminated.add(name);
-    eliminated.add(loserName); // also add full string
+    eliminated.add(loserName);
   });
   return eliminated;
 }
