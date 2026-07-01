@@ -408,7 +408,13 @@ function MatchCard({ m, isAdmin, user, allPreds, result, onVote, onResult, isEli
   const [open, setOpen] = React.useState(false);
   const pred = allPreds?.[m[0]]?.[user] || {};
   const res = result || {};
-  const locked = !isAdmin && (!!res.g || !!res.fin);
+  // Bloqueo: (1) admin siempre puede editar, (2) resultado ingresado, (3) partido ya empezó
+  const kickoffPassed = isMatchStarted(m[2]);
+  const locked = !isAdmin && (!!res.g || !!res.fin || kickoffPassed);
+  // Mensaje de bloqueo diferenciado
+  const lockMsg = kickoffPassed && !res.g && !res.fin
+    ? '⏱ Partido en curso — predicciones bloqueadas automáticamente'
+    : '🔒 Resultado registrado — predicciones bloqueadas';
   const pts = Object.keys(res).length ? scoreMatch(pred, res, isElim) : null;
   const tL = isElim ? resolveRef(m[3], fRes, eRes, b3assigned||{}, m[0]) : `${m[5]} ${m[3]}`;
   const tV = isElim ? resolveRef(m[4], fRes, eRes, b3assigned||{}, m[0]) : `${m[6]} ${m[4]}`;
@@ -468,7 +474,7 @@ function MatchCard({ m, isAdmin, user, allPreds, result, onVote, onResult, isEli
       e('div',{className:'mn'},'#'+m[0], !isElim&&e('div',{style:{color:'#F59E0B',fontSize:9}},'Gr.'+m[1])),
       e('div',{className:'mt'},
         e('div',{className:'mtr'},e('span',{className:'tn'},tL),e('span',{style:{color:'#94a3b8',fontSize:10,flexShrink:0}},'vs'),e('span',{className:'tn'},tV)),
-        e('div',{className:'mdt'},e('span',null,m[2]+(isElim&&m[1]?` · ${RL[m[1]]||m[1]}`:'')+(locked?' 🔒':'')),bcCode&&e(Chips,{code:bcCode}))
+        e('div',{className:'mdt'},e('span',null,m[2]+(isElim&&m[1]?` · ${RL[m[1]]||m[1]}`:'')+(kickoffPassed&&!res.g&&!res.fin?' ⏱':locked?' 🔒':'')),bcCode&&e(Chips,{code:bcCode}))
       ),
       e('div',{className:'mst'},
         res.fin?e('span',{className:'rb'},res.fin):res.g&&e('span',{style:{background:'#1E3A6B',color:'#6B80A0',fontSize:10,fontWeight:500,padding:'2px 5px',borderRadius:4}},res.g==='L'?'Local':res.g==='V'?'Visita':'Empate'),
@@ -480,7 +486,7 @@ function MatchCard({ m, isAdmin, user, allPreds, result, onVote, onResult, isEli
       )
     ),
     open&&e('div',{className:'mb'},
-      locked&&e('div',{className:'lkb'},'🔒 Resultado registrado — predicciones bloqueadas'),
+      locked&&e('div',{className:'lkb'},lockMsg),
       cats.map(cat=>{
         const cr=res[cat.k]||null, cp=pred[cat.k]||null;
         const status=catResult(cat.k,pred,res);
@@ -614,7 +620,7 @@ function MatchCard({ m, isAdmin, user, allPreds, result, onVote, onResult, isEli
 const MES = {jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,ago:7,sep:8,oct:9,nov:10,dic:11,
               ene:0,abr:3,may2:4};
 function matchDate(dateStr) {
-  // formato: "JUE 11-jun 15:00"
+  // formato: "JUE 11-jun 15:00" — hora en hora chilena (America/Santiago)
   const m = dateStr.match(/(\d+)-(\w+)\s+(\d+):(\d+)/);
   if (!m) return new Date(9999,0,1);
   const day = parseInt(m[1]);
@@ -623,6 +629,15 @@ function matchDate(dateStr) {
   const monMap = {ene:0,feb:1,mar:2,abr:3,may:4,jun:5,jul:6,ago:7,sep:8,oct:9,nov:10,dic:11};
   const mon = monMap[monStr] ?? 5;
   return new Date(2026, mon, day, hour, min);
+}
+
+function isMatchStarted(dateStr) {
+  // Verdadero si la hora actual (Chile) ya superó la hora de inicio del partido
+  // Los datos ya están en hora Chile, y el navegador usa la zona horaria local del usuario.
+  // Para garantizar consistencia, comparamos contra hora de Santiago explícitamente.
+  const kickoff = matchDate(dateStr);
+  const nowChile = new Date(new Date().toLocaleString('en-US', {timeZone:'America/Santiago'}));
+  return nowChile >= kickoff;
 }
 
 function getNextMatches(fdgResults, elimResults, n=3) {
