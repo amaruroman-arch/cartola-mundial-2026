@@ -1300,8 +1300,7 @@ function EstadisticasView({ fdg, elim, onNavigate, initPlayer }) {
 
   const fdgData  = activePlayers.map(p => buildPlayerData(p, FDG,  fdg.preds,  fdg.results,  CATS_FDG_LABELS));
   const elimData = activePlayers.map(p => buildPlayerData(p, ELIM, elim.preds, elim.results, CATS_ELIM_LABELS));
-  // TrendChart always shows ALL players (like race chart) — no backend overload needed
-  const trendData = PLAYERS.map(p => ({
+  const trendData = activePlayers.map(p => ({
     player: p, color: PC[p],
     trend: calcTrendPoints(p, fdg.preds, fdg.results, elim.preds, elim.results)
   }));
@@ -1485,13 +1484,15 @@ function TrendChart({ allPlayerData, size }) {
   const chartH = H - PAD.top - PAD.bottom;
   const n = TREND_PHASES.length; // 8 phases
 
-  // Max cumulative pts across all players for Y scale
+  // Max cumulative pts across players for Y scale (only played phases)
   const allCums = allPlayerData.flatMap(d => d.trend.map(t => t.cum));
   const maxPts = Math.max(...allCums, 1);
   // Round up to nice number
   const yMax = Math.ceil(maxPts / 50) * 50 || 50;
 
-  const xScale = i => PAD.left + (i / (n-1)) * chartW;
+  // Use active (truncated) phase count for x scale
+  const activeCount = allPlayerData[0]?.trend?.length || n;
+  const xScale = i => PAD.left + (i / Math.max(activeCount-1,1)) * chartW;
   const yScale = v => PAD.top + chartH - (v / yMax) * chartH;
 
   // Y gridlines + labels
@@ -1507,25 +1508,29 @@ function TrendChart({ allPlayerData, size }) {
     );
   }
 
-  // X axis labels (phase names)
-  const xLabels = TREND_PHASES.map((ph,i) => {
-    const x = xScale(i);
-    const isElim = ph.type==='elim';
-    return e('text',{key:'xl'+i, x, y:H-PAD.bottom+12,
+  // X axis labels — only for phases with data
+  const activeTrend = allPlayerData[0]?.trend || [];
+  const activeN = activeTrend.length;
+  const xLabels = activeTrend.map((t,i) => {
+    const ph = TREND_PHASES.find(p=>p.label===t.label);
+    const isElim = ph?.type==='elim';
+    return e('text',{key:'xl'+i, x:xScale(i), y:H-PAD.bottom+12,
       textAnchor:'middle', fontSize:8,
       fill: isElim ? '#F59E0B' : '#64748b',
       fontWeight: isElim ? '600' : '400'
-    }, ph.label);
+    }, t.label);
   });
 
-  // Vertical separator between groups and elim
-  const sepX = (xScale(2) + xScale(3)) / 2;
+  // Vertical separator between groups and elim (only if both present)
+  const lastGroupIdx = activeTrend.reduce((acc,t,i)=>TREND_PHASES.find(p=>p.label===t.label)?.type==='fdg'?i:acc,-1);
+  const firstElimIdx = activeTrend.findIndex(t=>TREND_PHASES.find(p=>p.label===t.label)?.type==='elim');
+  const sepX = lastGroupIdx>=0 && firstElimIdx>=0 ? (xScale(lastGroupIdx)+xScale(firstElimIdx))/2 : -999;
   const separator = [
     e('line',{key:'sep', x1:sepX, y1:PAD.top, x2:sepX, y2:PAD.top+chartH,
       stroke:'#F59E0B', strokeWidth:1, strokeDasharray:'3,3', opacity:0.5}),
     e('text',{key:'sep-g', x:PAD.left+2, y:PAD.top-6, fontSize:7, fill:'#64748b'},'GRUPOS'),
     e('text',{key:'sep-e', x:sepX+3, y:PAD.top-6, fontSize:7, fill:'#F59E0B'},'ELIMINATORIAS'),
-  ];
+  ].filter(Boolean);
 
   // Player lines + dots
   const playerElems = allPlayerData.flatMap(({player, color, trend}) => {
