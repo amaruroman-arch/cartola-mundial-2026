@@ -1304,6 +1304,8 @@ function EstadisticasView({ fdg, elim, onNavigate, initPlayer }) {
     player: p, color: PC[p],
     trend: calcTrendPoints(p, fdg.preds, fdg.results, elim.preds, elim.results)
   }));
+  // Race data always uses ALL players for correct rankings, filtered to active for display
+  const raceData = calcRaceTrend(fdg.preds, fdg.results, elim.preds, elim.results);
 
   const total = (data) => Object.values(data.stats).reduce((s,v)=>s+v.earned,0);
 
@@ -1390,11 +1392,22 @@ function EstadisticasView({ fdg, elim, onNavigate, initPlayer }) {
       e('div',{style:{background:'#fff',borderRadius:12,padding:'14px 8px 16px',border:'1px solid #e2e8f0'}},
         e('div',{style:{textAlign:'center',fontWeight:700,fontSize:13,color:'#0F1C3F',marginBottom:6,fontFamily:'Georgia,serif'}},'📈 Tendencia acumulada'),
         e('div',{style:{textAlign:'center',fontSize:10,color:'#94a3b8',marginBottom:8}},
-          'Puntos acumulados por fase · amarillo = eliminatorias'
+          'Puntos acumulados por fase · solo fases con resultados · amarillo = eliminatorias'
         ),
         e(Legend),
         e('div',{style:{display:'flex',justifyContent:'center',overflowX:'auto'}},
           e(TrendChart,{allPlayerData:trendData,size:340})
+        )
+      ),
+
+      // Carrera de posiciones
+      e('div',{style:{background:'#fff',borderRadius:12,padding:'14px 8px 16px',border:'1px solid #e2e8f0'}},
+        e('div',{style:{textAlign:'center',fontWeight:700,fontSize:13,color:'#0F1C3F',marginBottom:6,fontFamily:'Georgia,serif'}},'🏁 Carrera de posiciones'),
+        e('div',{style:{textAlign:'center',fontSize:10,color:'#94a3b8',marginBottom:8}},
+          '1° arriba · 7° abajo · muestra todos los jugadores · se actualiza con cada resultado'
+        ),
+        e('div',{style:{display:'flex',justifyContent:'center',overflowX:'auto'}},
+          e(RaceChart,{raceData, activePlayers:PLAYERS, size:340})
         )
       )
     )
@@ -1416,17 +1429,49 @@ const TREND_PHASES = [
 ];
 
 function calcTrendPoints(player, fdgPreds, fdgResults, elimPreds, elimResults) {
-  // Returns array of {phase, pts} cumulative
+  // Returns array of {label, pts, cum} only for phases with at least 1 result
   let cumulative = 0;
-  return TREND_PHASES.map(ph => {
+  const result = [];
+  for(const ph of TREND_PHASES) {
+    const results = ph.type==='fdg' ? fdgResults : elimResults;
+    const hasResult = ph.ids.some(id => results?.[id] && (results[id].g || results[id].fin));
+    if(!hasResult) break; // stop at first phase with no results yet
     let phPts = 0;
     ph.ids.forEach(id => {
       const p = ph.type==='fdg' ? fdgPreds?.[id]?.[player] : elimPreds?.[id]?.[player];
-      const r = ph.type==='fdg' ? fdgResults?.[id]      : elimResults?.[id];
+      const r = ph.type==='fdg' ? fdgResults?.[id] : elimResults?.[id];
       phPts += scoreMatch(p, r, ph.type==='elim');
     });
     cumulative += phPts;
-    return {label: ph.label, pts: phPts, cum: cumulative};
+    result.push({label: ph.label, pts: phPts, cum: cumulative});
+  }
+  return result;
+}
+
+// Returns trend data for ALL players at once, with positions at each phase
+function calcAllTrends(fdgPreds, fdgResults, elimPreds, elimResults) {
+  const byPlayer = {};
+  PLAYERS.forEach(p => {
+    byPlayer[p] = calcTrendPoints(p, fdgPreds, fdgResults, elimPreds, elimResults);
+  });
+  return byPlayer;
+}
+
+function calcRaceTrend(fdgPreds, fdgResults, elimPreds, elimResults) {
+  // Returns [{label, rankings:[{player,pos,cum}]}] per phase with results
+  const byPlayer = calcAllTrends(fdgPreds, fdgResults, elimPreds, elimResults);
+  // Find phases that have data (use first player as reference)
+  const refTrend = byPlayer[PLAYERS[0]];
+  if(!refTrend || refTrend.length === 0) return [];
+  return refTrend.map((ph, i) => {
+    const standings = PLAYERS.map(p => ({
+      player: p,
+      cum: byPlayer[p]?.[i]?.cum || 0
+    })).sort((a,b) => b.cum - a.cum);
+    return {
+      label: ph.label,
+      rankings: standings.map((s,rank) => ({...s, pos: rank+1}))
+    };
   });
 }
 
@@ -1516,6 +1561,102 @@ function TrendChart({ allPlayerData, size }) {
 
   return e('svg',{width:W, height:H, viewBox:`0 0 ${W} ${H}`, style:{overflow:'visible'}},
     ...yTicks, ...separator, ...axes, ...playerElems, ...xLabels
+  );
+}
+
+
+function RaceChart({ raceData, activePlayers, size }) {
+  // raceData: [{label, rankings:[{player,pos,cum}]}]
+  // Y axis: position 1 (top) to 7 (bottom)
+  const e = React.createElement;
+  if(!raceData || raceData.length === 0) return e('div',{style:{textAlign:'center',color:'#94a3b8',padding:20,fontSize:12}},'Sin datos aún');
+
+  const W = size, H = Math.round(size * 0.65);
+  const PAD = {top:24, right:50, bottom:48, left:32};
+  const chartW = W - PAD.left - PAD.right;
+  const chartH = H - PAD.top - PAD.bottom;
+  const nPhases = raceData.length;
+  const nPlayers = PLAYERS.length; // 7
+
+  const xScale = i => PAD.left + (i / Math.max(nPhases-1,1)) * chartW;
+  // Position 1 at top, 7 at bottom
+  const yScale = pos => PAD.top + ((pos-1) / (nPlayers-1)) * chartH;
+
+  // Grid lines (horizontal per position)
+  const yGrid = Array.from({length:nPlayers},(_,i) => {
+    const pos = i+1;
+    const y = yScale(pos);
+    return [
+      e('line',{key:'yg'+pos, x1:PAD.left, y1:y, x2:W-PAD.right, y2:y,
+        stroke:'#E2E8F0', strokeWidth:1}),
+      e('text',{key:'yl'+pos, x:PAD.left-4, y, textAnchor:'end',
+        dominantBaseline:'middle', fontSize:8, fill:'#94a3b8'}, pos+'°')
+    ];
+  }).flat();
+
+  // X axis labels
+  const xLabels = raceData.map((ph,i) => {
+    const x = xScale(i);
+    const isElim = !['J1 Grupos','J2 Grupos','J3 Grupos'].includes(ph.label);
+    return e('text',{key:'xl'+i, x, y:H-PAD.bottom+12,
+      textAnchor:'middle', fontSize:8,
+      fill: isElim?'#F59E0B':'#64748b',
+      fontWeight: isElim?'600':'400'
+    }, ph.label);
+  });
+
+  // Separator between grupos / elim
+  const groupPhases = raceData.filter(ph=>['J1 Grupos','J2 Grupos','J3 Grupos'].includes(ph.label)).length;
+  const sepElems = groupPhases > 0 && groupPhases < nPhases ? [
+    e('line',{key:'sep',
+      x1:(xScale(groupPhases-1)+xScale(groupPhases))/2, y1:PAD.top,
+      x2:(xScale(groupPhases-1)+xScale(groupPhases))/2, y2:PAD.top+chartH,
+      stroke:'#F59E0B', strokeWidth:1, strokeDasharray:'3,3', opacity:0.5}),
+    e('text',{key:'sg', x:PAD.left+2, y:PAD.top-10, fontSize:7, fill:'#64748b'},'GRUPOS'),
+    e('text',{key:'se', x:(xScale(groupPhases-1)+xScale(groupPhases))/2+3, y:PAD.top-10, fontSize:7, fill:'#F59E0B'},'ELIMINATORIAS'),
+  ] : [];
+
+  // One line per active player
+  const playerLines = activePlayers.map(player => {
+    const color = PC[player];
+    // Get position at each phase
+    const positions = raceData.map(ph => {
+      const r = ph.rankings.find(r=>r.player===player);
+      return r ? r.pos : nPlayers;
+    });
+    const pts = positions.map((pos,i) => [xScale(i), yScale(pos)]);
+    const d = pts.map(([x,y],i) => (i===0?`M${x},${y}`:`L${x},${y}`)).join(' ');
+
+    const dots = pts.map(([x,y],i) =>
+      e('circle',{key:'d'+player+i, cx:x, cy:y, r:3.5, fill:'#fff', stroke:color, strokeWidth:2})
+    );
+
+    // End label: player name + position at last phase
+    const [lastX, lastY] = pts[pts.length-1];
+    const lastPos = positions[positions.length-1];
+    const endLabel = e('text',{key:'end'+player,
+      x:lastX+6, y:lastY, fontSize:8, fill:color, fontWeight:'bold',
+      dominantBaseline:'middle'},
+      player.charAt(0)+player.slice(1,4).toLowerCase()+' '+lastPos+'°'
+    );
+
+    return [
+      e('path',{key:'l'+player, d, fill:'none', stroke:color,
+        strokeWidth:2.5, strokeLinejoin:'round', strokeLinecap:'round'}),
+      ...dots, endLabel
+    ];
+  }).flat();
+
+  // Axes
+  const axes = [
+    e('line',{key:'axv', x1:PAD.left, y1:PAD.top, x2:PAD.left, y2:PAD.top+chartH, stroke:'#CBD5E1', strokeWidth:1}),
+    e('line',{key:'axh', x1:PAD.left, y1:PAD.top+chartH, x2:W-PAD.right, y2:PAD.top+chartH, stroke:'#CBD5E1', strokeWidth:1}),
+    e('text',{key:'ylabel', x:11, y:PAD.top+chartH/2, textAnchor:'middle', fontSize:8, fill:'#64748b',
+      transform:`rotate(-90,11,${PAD.top+chartH/2})`},'Posición'),
+  ];
+
+  return e('svg',{width:W, height:H, viewBox:`0 0 ${W} ${H}`, style:{overflow:'visible'}},
+    ...yGrid, ...sepElems, ...axes, ...playerLines, ...xLabels
   );
 }
 
