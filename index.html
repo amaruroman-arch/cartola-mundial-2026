@@ -847,8 +847,8 @@ function Tabla({ fdg, elim, champ, onNavigate }) {
       e('div',{style:{display:'flex',flexWrap:'wrap',gap:6}},
         PLAYERS.map(p=>e('button',{key:p,
           onClick:()=>onNavigate&&onNavigate({type:'estadisticas',player:p}),
-          style:{padding:'4px 10px',borderRadius:16,border:'2px solid #'+PC[p],
-            background:'#'+PC[p],color:'#fff',fontWeight:600,fontSize:11,
+          style:{padding:'4px 10px',borderRadius:16,border:'2px solid '+PC[p],
+            background:PC[p],color:'#fff',fontWeight:600,fontSize:11,
             cursor:'pointer',fontFamily:'inherit',opacity:0.9}
         },p))
       )
@@ -1294,7 +1294,7 @@ function EstadisticasView({ fdg, elim, onNavigate, initPlayer }) {
   // Build allPlayers for chart: primary first, then compared
   const activePlayers = [primary, ...Array.from(compared)];
   const buildPlayerData = (p, matches, preds, results, cats) => ({
-    player: p, color: '#'+PC[p],
+    player: p, color: PC[p],
     stats: calcPlayerCatStats(p, matches, preds, results, cats)
   });
 
@@ -1306,7 +1306,7 @@ function EstadisticasView({ fdg, elim, onNavigate, initPlayer }) {
   const PlayerBtn = ({p}) => {
     const isPrimary = p === primary;
     const isCompared = compared.has(p);
-    const col = '#'+PC[p];
+    const col = PC[p];
     return e('div',{key:p, style:{display:'flex',alignItems:'center',gap:4}},
       // Main button — click to set as primary
       e('button',{
@@ -1340,8 +1340,8 @@ function EstadisticasView({ fdg, elim, onNavigate, initPlayer }) {
   const Legend = () => e('div',{style:{display:'flex',flexWrap:'wrap',gap:8,marginBottom:8,justifyContent:'center'}},
     activePlayers.map(p =>
       e('div',{key:p,style:{display:'flex',alignItems:'center',gap:4}},
-        e('div',{style:{width:10,height:10,borderRadius:'50%',background:'#'+PC[p]}}),
-        e('span',{style:{fontSize:11,fontWeight:600,color:'#'+PC[p]}},p),
+        e('div',{style:{width:10,height:10,borderRadius:'50%',background:PC[p]}}),
+        e('span',{style:{fontSize:11,fontWeight:600,color:PC[p]}},p),
         e('span',{style:{fontSize:10,color:'#94a3b8'}},
           '('+(fdgData.find(d=>d.player===p)?total(fdgData.find(d=>d.player===p)):0)+
           '+'+(elimData.find(d=>d.player===p)?total(elimData.find(d=>d.player===p)):0)+' pts)'
