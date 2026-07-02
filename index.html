@@ -1300,6 +1300,10 @@ function EstadisticasView({ fdg, elim, onNavigate, initPlayer }) {
 
   const fdgData  = activePlayers.map(p => buildPlayerData(p, FDG,  fdg.preds,  fdg.results,  CATS_FDG_LABELS));
   const elimData = activePlayers.map(p => buildPlayerData(p, ELIM, elim.preds, elim.results, CATS_ELIM_LABELS));
+  const trendData = activePlayers.map(p => ({
+    player: p, color: PC[p],
+    trend: calcTrendPoints(p, fdg.preds, fdg.results, elim.preds, elim.results)
+  }));
 
   const total = (data) => Object.values(data.stats).reduce((s,v)=>s+v.earned,0);
 
@@ -1380,8 +1384,138 @@ function EstadisticasView({ fdg, elim, onNavigate, initPlayer }) {
         e('div',{style:{display:'flex',justifyContent:'center'}},
           e(RadarChart,{catLabels:CATS_ELIM_LABELS,allPlayerStats:elimData,size:310})
         )
+      ),
+
+      // Tendencia acumulada
+      e('div',{style:{background:'#fff',borderRadius:12,padding:'14px 8px 16px',border:'1px solid #e2e8f0'}},
+        e('div',{style:{textAlign:'center',fontWeight:700,fontSize:13,color:'#0F1C3F',marginBottom:6,fontFamily:'Georgia,serif'}},'📈 Tendencia acumulada'),
+        e('div',{style:{textAlign:'center',fontSize:10,color:'#94a3b8',marginBottom:8}},
+          'Puntos acumulados por fase · amarillo = eliminatorias'
+        ),
+        e(Legend),
+        e('div',{style:{display:'flex',justifyContent:'center',overflowX:'auto'}},
+          e(TrendChart,{allPlayerData:trendData,size:340})
+        )
       )
     )
+  );
+}
+
+
+// ── TREND CHART ─────────────────────────────────────────────────────────────
+// Phase definitions: label, match IDs from FDG+ELIM
+const TREND_PHASES = [
+  {label:'J1 Grupos',  ids: Array.from({length:24}, (_,i)=>i+1),   type:'fdg'},
+  {label:'J2 Grupos',  ids: Array.from({length:24}, (_,i)=>i+25),  type:'fdg'},
+  {label:'J3 Grupos',  ids: Array.from({length:24}, (_,i)=>i+49),  type:'fdg'},
+  {label:'Ronda 32',   ids: Array.from({length:16}, (_,i)=>i+73),  type:'elim'},
+  {label:'Octavos',    ids: Array.from({length:8},  (_,i)=>i+89),  type:'elim'},
+  {label:'Cuartos',    ids: Array.from({length:4},  (_,i)=>i+97),  type:'elim'},
+  {label:'Semifinal',  ids:[101,102],                               type:'elim'},
+  {label:'3°/Final',   ids:[103,104],                               type:'elim'},
+];
+
+function calcTrendPoints(player, fdgPreds, fdgResults, elimPreds, elimResults) {
+  // Returns array of {phase, pts} cumulative
+  let cumulative = 0;
+  return TREND_PHASES.map(ph => {
+    let phPts = 0;
+    ph.ids.forEach(id => {
+      const p = ph.type==='fdg' ? fdgPreds?.[id]?.[player] : elimPreds?.[id]?.[player];
+      const r = ph.type==='fdg' ? fdgResults?.[id]      : elimResults?.[id];
+      phPts += scoreMatch(p, r, ph.type==='elim');
+    });
+    cumulative += phPts;
+    return {label: ph.label, pts: phPts, cum: cumulative};
+  });
+}
+
+function TrendChart({ allPlayerData, size }) {
+  // allPlayerData: [{player, color, trend:[{label,pts,cum}]}]
+  const e = React.createElement;
+  const W = size, H = Math.round(size * 0.55);
+  const PAD = {top:20, right:16, bottom:48, left:38};
+  const chartW = W - PAD.left - PAD.right;
+  const chartH = H - PAD.top - PAD.bottom;
+  const n = TREND_PHASES.length; // 8 phases
+
+  // Max cumulative pts across all players for Y scale
+  const allCums = allPlayerData.flatMap(d => d.trend.map(t => t.cum));
+  const maxPts = Math.max(...allCums, 1);
+  // Round up to nice number
+  const yMax = Math.ceil(maxPts / 50) * 50 || 50;
+
+  const xScale = i => PAD.left + (i / (n-1)) * chartW;
+  const yScale = v => PAD.top + chartH - (v / yMax) * chartH;
+
+  // Y gridlines + labels
+  const yTicks = [];
+  const yStep = yMax <= 100 ? 20 : yMax <= 300 ? 50 : 100;
+  for(let v = 0; v <= yMax; v += yStep) {
+    const y = yScale(v);
+    yTicks.push(
+      e('line',{key:'yg'+v, x1:PAD.left, y1:y, x2:W-PAD.right, y2:y,
+        stroke:'#E2E8F0', strokeWidth:1}),
+      e('text',{key:'yl'+v, x:PAD.left-4, y:y, textAnchor:'end',
+        dominantBaseline:'middle', fontSize:8, fill:'#94a3b8'}, v)
+    );
+  }
+
+  // X axis labels (phase names)
+  const xLabels = TREND_PHASES.map((ph,i) => {
+    const x = xScale(i);
+    const isElim = ph.type==='elim';
+    return e('text',{key:'xl'+i, x, y:H-PAD.bottom+12,
+      textAnchor:'middle', fontSize:8,
+      fill: isElim ? '#F59E0B' : '#64748b',
+      fontWeight: isElim ? '600' : '400'
+    }, ph.label);
+  });
+
+  // Vertical separator between groups and elim
+  const sepX = (xScale(2) + xScale(3)) / 2;
+  const separator = [
+    e('line',{key:'sep', x1:sepX, y1:PAD.top, x2:sepX, y2:PAD.top+chartH,
+      stroke:'#F59E0B', strokeWidth:1, strokeDasharray:'3,3', opacity:0.5}),
+    e('text',{key:'sep-g', x:PAD.left+2, y:PAD.top-6, fontSize:7, fill:'#64748b'},'GRUPOS'),
+    e('text',{key:'sep-e', x:sepX+3, y:PAD.top-6, fontSize:7, fill:'#F59E0B'},'ELIMINATORIAS'),
+  ];
+
+  // Player lines + dots
+  const playerElems = allPlayerData.flatMap(({player, color, trend}) => {
+    const pts = trend.map((t,i) => [xScale(i), yScale(t.cum)]);
+    const pathD = pts.map(([x,y],i) => (i===0?`M${x},${y}`:`L${x},${y}`)).join(' ');
+    const elems = [
+      e('path',{key:'line'+player, d:pathD,
+        fill:'none', stroke:color, strokeWidth:2.5, strokeLinejoin:'round', strokeLinecap:'round'})
+    ];
+    trend.forEach((t,i) => {
+      const [x,y] = pts[i];
+      elems.push(
+        e('circle',{key:'dot'+player+i, cx:x, cy:y, r:3.5,
+          fill:'#fff', stroke:color, strokeWidth:2}),
+        // Tooltip-style label on last point
+        i === trend.length-1 && e('text',{key:'end'+player,
+          x:x+5, y:y, fontSize:8, fill:color, fontWeight:'bold',
+          dominantBaseline:'middle'}, t.cum+'')
+      );
+    });
+    return elems;
+  });
+
+  // Axes
+  const axes = [
+    e('line',{key:'ax', x1:PAD.left, y1:PAD.top, x2:PAD.left, y2:PAD.top+chartH,
+      stroke:'#CBD5E1', strokeWidth:1}),
+    e('line',{key:'ay', x1:PAD.left, y1:PAD.top+chartH, x2:W-PAD.right, y2:PAD.top+chartH,
+      stroke:'#CBD5E1', strokeWidth:1}),
+    e('text',{key:'yaxis', x:10, y:PAD.top+chartH/2,
+      textAnchor:'middle', fontSize:8, fill:'#64748b',
+      transform:`rotate(-90,10,${PAD.top+chartH/2})`}, 'Puntos acumulados'),
+  ];
+
+  return e('svg',{width:W, height:H, viewBox:`0 0 ${W} ${H}`, style:{overflow:'visible'}},
+    ...yTicks, ...separator, ...axes, ...playerElems, ...xLabels
   );
 }
 
