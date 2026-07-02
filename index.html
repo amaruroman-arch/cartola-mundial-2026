@@ -839,7 +839,21 @@ function Tabla({ fdg, elim, champ, onNavigate }) {
     ),
     !champTeam&&champ.real&&e('div',{style:{background:'#0F1C3F',color:'#F59E0B',borderRadius:8,padding:'8px 13px',marginTop:8,fontFamily:'Georgia,serif',fontSize:13}},'🏆 Campeón elección: '+champ.real),
     e(ProximosPartidos,{fdg,elim,onNavigate}),
-    e('div',{className:'hint'},e('span',null,'Canales Chile:'),...Object.entries(CH).map(([k,{bg,tx,nm}])=>e('span',{key:k,style:{fontSize:10,fontWeight:700,padding:'2px 5px',borderRadius:3,background:bg,color:tx}},nm)),e('span',null,'· Puntaje no incluye elección de campeón'))
+    e('div',{style:{marginTop:10,background:'#fff',border:'1px solid #e2e8f0',borderRadius:10,padding:'10px 14px'}},
+      e('div',{style:{display:'flex',alignItems:'center',gap:8,marginBottom:8}},
+        e('span',{style:{fontSize:18}},'📊'),
+        e('span',{style:{fontWeight:700,fontSize:13,color:'#0F1C3F',fontFamily:'Georgia,serif'}},'Estadísticas')
+      ),
+      e('div',{style:{display:'flex',flexWrap:'wrap',gap:6}},
+        PLAYERS.map(p=>e('button',{key:p,
+          onClick:()=>onNavigate&&onNavigate({type:'estadisticas',player:p}),
+          style:{padding:'4px 10px',borderRadius:16,border:'2px solid #'+PC[p],
+            background:'transparent',color:'#'+PC[p],fontWeight:600,fontSize:11,
+            cursor:'pointer',fontFamily:'inherit'}
+        },p))
+      )
+    ),
+
   );
 }
 
@@ -1149,6 +1163,174 @@ function CampeonView({ user, isAdmin, champ, onVote, onReal }) {
 }
 
 
+
+// ── ESTADÍSTICAS ────────────────────────────────────────────────────────────
+const CATS_FDG_LABELS = [
+  {k:'g',  l:'Ganador',   p:3},
+  {k:'gol',l:'1° Gol',    p:1},
+  {k:'rem',l:'Remates',   p:1},
+  {k:'fal',l:'Faltas',    p:1},
+  {k:'off',l:'Offsides',  p:1},
+  {k:'tar',l:'1era Tarj.',p:1},
+  {k:'par',l:'Parcial',   p:1},
+  {k:'fin',l:'Final',     p:1},
+];
+const CATS_ELIM_LABELS = [
+  {k:'g',   l:'Ganador',   p:3},
+  {k:'gol', l:'1° Gol',    p:1},
+  {k:'rem', l:'Remates',   p:1},
+  {k:'fal', l:'Faltas',    p:1},
+  {k:'off', l:'Offsides',  p:1},
+  {k:'tar', l:'1era Tarj.',p:1},
+  {k:'par', l:'Parcial',   p:1},
+  {k:'res90',l:"Res. 90'", p:1},
+  {k:'fin', l:'Final',     p:1},
+  {k:'ala', l:'Alargue',   p:2},
+  {k:'pen', l:'Penales',   p:2},
+];
+
+function calcPlayerCatStats(player, matches, preds, results, catList) {
+  // Returns {k: {earned, possible}} for each category
+  const stats = {};
+  catList.forEach(c => { stats[c.k] = {earned:0, possible:0}; });
+  matches.forEach(m => {
+    const id = m[0];
+    const p = preds?.[id]?.[player];
+    const r = results?.[id];
+    if(!p || !r) return;
+    catList.forEach(c => {
+      // Check if player voted this category
+      if(!p[c.k]) return;
+      stats[c.k].possible += c.p;
+      // Score
+      if(c.k==='g'&&r.g&&p.g===r.g) stats[c.k].earned+=3;
+      else if(['gol','rem','fal','off','tar'].includes(c.k)&&r[c.k]&&p[c.k]===r[c.k]) stats[c.k].earned++;
+      else if(c.k==='par'&&r.par&&p.par&&r.par.toLowerCase()===p.par.toLowerCase()) stats[c.k].earned++;
+      else if(c.k==='res90'&&r.res90&&p.res90&&r.res90.toLowerCase()===p.res90.toLowerCase()) stats[c.k].earned++;
+      else if(c.k==='fin'&&r.fin&&p.fin&&r.fin.toLowerCase()===p.fin.toLowerCase()) stats[c.k].earned++;
+      else if(c.k==='ala'&&r.ala&&p.ala===r.ala) stats[c.k].earned+=2;
+      else if(c.k==='pen'&&r.pen&&p.pen===r.pen) stats[c.k].earned+=2;
+    });
+  });
+  return stats;
+}
+
+function RadarChart({ catLabels, playerStats, playerColor, size }) {
+  const e = React.createElement;
+  const n = catLabels.length;
+  const cx = size/2, cy = size/2;
+  const R = size*0.36;
+  const labelR = size*0.47;
+  const rings = [0.25,0.5,0.75,1.0];
+
+  const angle = (i) => (Math.PI*2*i/n) - Math.PI/2;
+  const pt = (r,i) => [cx + r*Math.cos(angle(i)), cy + r*Math.sin(angle(i))];
+
+  // Axes
+  const axes = catLabels.map((_,i) => {
+    const [x,y] = pt(R,i);
+    return e('line',{key:'ax'+i,x1:cx,y1:cy,x2:x,y2:y,stroke:'#1E3A6B',strokeWidth:1});
+  });
+
+  // Ring grid
+  const ringPaths = rings.map((f,ri) => {
+    const pts = catLabels.map((_,i)=>pt(R*f,i));
+    const d = pts.map((p,i)=>(i===0?`M${p[0]},${p[1]}`:`L${p[0]},${p[1]}`)).join(' ')+'Z';
+    return e('path',{key:'ring'+ri,d,fill:'none',stroke:'#1E3A6B',strokeWidth:ri===3?1.5:0.5,opacity:0.6});
+  });
+
+  // Player polygon — value = earned/possible ratio (0-1), 0 if no data
+  const playerPts = catLabels.map((c,i) => {
+    const st = playerStats[c.k];
+    const ratio = st && st.possible>0 ? Math.min(st.earned/st.possible,1) : 0;
+    return pt(R*ratio, i);
+  });
+  const playerPath = playerPts.map((p,i)=>(i===0?`M${p[0]},${p[1]}`:`L${p[0]},${p[1]}`)).join(' ')+'Z';
+
+  // Labels
+  const labels = catLabels.map((c,i) => {
+    const [lx,ly] = pt(labelR,i);
+    const anchor = lx < cx-5 ? 'end' : lx > cx+5 ? 'start' : 'middle';
+    const st = playerStats[c.k];
+    const pct = st && st.possible>0 ? Math.round(100*st.earned/st.possible) : 0;
+    return e('text',{key:'lbl'+i,x:lx,y:ly,textAnchor:anchor,dominantBaseline:'middle',
+      fontSize:9,fill:'#94a3b8',fontFamily:'system-ui'},
+      e('tspan',{x:lx,dy:0},c.l),
+      e('tspan',{x:lx,dy:10,fill:playerColor,fontWeight:'bold'},`${st?.earned||0}/${st?.possible||0}`)
+    );
+  });
+
+  return e('svg',{width:size,height:size,viewBox:`0 0 ${size} ${size}`,style:{overflow:'visible'}},
+    ...ringPaths,
+    ...axes,
+    e('path',{d:playerPath,fill:playerColor,fillOpacity:0.25,stroke:playerColor,strokeWidth:2}),
+    ...labels
+  );
+}
+
+function EstadisticasView({ fdg, elim, onNavigate, initPlayer }) {
+  const e = React.createElement;
+  const [selected, setSelected] = React.useState(initPlayer||PLAYERS[0]);
+  React.useEffect(()=>{ if(initPlayer) setSelected(initPlayer); },[initPlayer]);
+
+  const color = '#'+PC[selected];
+  const fdgStats = calcPlayerCatStats(selected, FDG, fdg.preds, fdg.results, CATS_FDG_LABELS);
+  const elimStats = calcPlayerCatStats(selected, ELIM, elim.preds, elim.results, CATS_ELIM_LABELS);
+
+  // Totals for display
+  const fdgTotal = Object.values(fdgStats).reduce((s,v)=>s+v.earned,0);
+  const elimTotal = Object.values(elimStats).reduce((s,v)=>s+v.earned,0);
+
+  return e('div',{className:'view'},
+    e('div',{className:'sec'},'📊 Estadísticas por jugador'),
+
+    // Player selector
+    e('div',{style:{display:'flex',flexWrap:'wrap',gap:6,marginBottom:14}},
+      PLAYERS.map(p => e('button',{key:p,
+        onClick:()=>setSelected(p),
+        style:{
+          padding:'5px 12px',borderRadius:20,border:'2px solid',fontWeight:600,
+          fontSize:12,cursor:'pointer',fontFamily:'inherit',
+          borderColor:'#'+PC[p],
+          background:selected===p?'#'+PC[p]:'transparent',
+          color:selected===p?'#fff':'#'+PC[p],
+          transition:'all .15s'
+        }
+      },p))
+    ),
+
+    // Charts
+    e('div',{style:{display:'flex',flexDirection:'column',gap:20}},
+
+      // Grupos
+      e('div',{style:{background:'#fff',borderRadius:12,padding:'12px 8px',border:'1px solid #e2e8f0'}},
+        e('div',{style:{textAlign:'center',fontWeight:700,fontSize:13,color:'#0F1C3F',marginBottom:4,fontFamily:'Georgia,serif'}},
+          '⚽ Fase de Grupos'
+        ),
+        e('div',{style:{textAlign:'center',fontSize:11,color:'#94a3b8',marginBottom:8}},
+          `Total: ${fdgTotal} pts`
+        ),
+        e('div',{style:{display:'flex',justifyContent:'center'}},
+          e(RadarChart,{catLabels:CATS_FDG_LABELS,playerStats:fdgStats,playerColor:color,size:280})
+        )
+      ),
+
+      // Eliminatorias
+      e('div',{style:{background:'#fff',borderRadius:12,padding:'12px 8px',border:'1px solid #e2e8f0'}},
+        e('div',{style:{textAlign:'center',fontWeight:700,fontSize:13,color:'#0F1C3F',marginBottom:4,fontFamily:'Georgia,serif'}},
+          '🏟️ Eliminatorias'
+        ),
+        e('div',{style:{textAlign:'center',fontSize:11,color:'#94a3b8',marginBottom:8}},
+          `Total: ${elimTotal} pts`
+        ),
+        e('div',{style:{display:'flex',justifyContent:'center'}},
+          e(RadarChart,{catLabels:CATS_ELIM_LABELS,playerStats:elimStats,playerColor:color,size:300})
+        )
+      )
+    )
+  );
+}
+
 function ReglasView() {
   const e = React.createElement;
   const sec = (title) => e('div',{style:{fontWeight:700,color:'#F59E0B',fontSize:13,marginTop:18,marginBottom:6,fontFamily:'Georgia,serif',borderBottom:'1px solid #1E3A6B',paddingBottom:4}},title);
@@ -1247,6 +1429,7 @@ function App() {
   const [tab,setTab]=useState('tabla');
   const [elimRnd,setElimRnd]=useState('R32');
   const [elimTab,setElimTab]=useState('fixture');
+  const [statsPlayer,setStatsPlayer]=useState(PLAYERS[0]);
   const [fdg,setFdg]=useState(E0());
   const [elim,setElim]=useState(E0());
   const [champ,setChamp]=useState({votes:{},real:null});
@@ -1272,6 +1455,9 @@ function App() {
       const em=ELIM.find(x=>x[0]===m.id);
       if(em){setElimRnd(em[1]);setElimTab('partidos');}
       setTab('elim');
+    } else if(m.type==='estadisticas'){
+      if(m.player) setStatsPlayer(m.player);
+      setTab('estadisticas');
     } else { setTab('grupos'); }
   };
   const login=(n,a)=>{setUser(n);setIsAdmin(a);try{localStorage.setItem('cn_user',n);localStorage.setItem('cn_admin',a?'1':'0');}catch{}};
@@ -1324,7 +1510,7 @@ function App() {
 
   if(!user)return React.createElement(React.Fragment,null,React.createElement('style',null,css),React.createElement(LoginScreen,{onLogin:login}));
 
-  const tabs=[{id:'tabla',l:'🏆 Tabla'},{id:'grupos',l:'⚽ Grupos'},{id:'pos',l:'📊 Posiciones'},{id:'elim',l:'🏟️ Elim.'},{id:'camp',l:'🏆 Campeón'},{id:'reglas',l:'📋 Reglas'}];
+  const tabs=[{id:'tabla',l:'🏆 Tabla'},{id:'grupos',l:'⚽ Grupos'},{id:'pos',l:'📊 Posiciones'},{id:'elim',l:'🏟️ Elim.'},{id:'camp',l:'🏆 Campeón'},{id:'reglas',l:'📋 Reglas'},{id:'estadisticas',l:'📊 Estadísticas'}];
   const e=React.createElement;
 
   return e(React.Fragment,null,
@@ -1350,7 +1536,8 @@ function App() {
     tab==='pos'&&e(PosicionesView,{fdg}),
     tab==='elim'&&e(EliminatoriasView,{user,isAdmin,elim,fdg,onVote:vote,onResult:result,initTab:elimTab,initRnd:elimRnd}),
     tab==='camp'&&e(CampeonView,{user,isAdmin,champ,onVote:cVote,onReal:cReal}),
-    tab==='reglas'&&e(ReglasView,null)
+    tab==='reglas'&&e(ReglasView,null),
+    tab==='estadisticas'&&e(EstadisticasView,{fdg,elim,onNavigate,initPlayer:statsPlayer})
   );
 }
 
