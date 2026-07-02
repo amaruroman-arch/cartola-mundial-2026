@@ -1300,7 +1300,8 @@ function EstadisticasView({ fdg, elim, onNavigate, initPlayer }) {
 
   const fdgData  = activePlayers.map(p => buildPlayerData(p, FDG,  fdg.preds,  fdg.results,  CATS_FDG_LABELS));
   const elimData = activePlayers.map(p => buildPlayerData(p, ELIM, elim.preds, elim.results, CATS_ELIM_LABELS));
-  const trendData = activePlayers.map(p => ({
+  // TrendChart always shows ALL players (like race chart) — no backend overload needed
+  const trendData = PLAYERS.map(p => ({
     player: p, color: PC[p],
     trend: calcTrendPoints(p, fdg.preds, fdg.results, elim.preds, elim.results)
   }));
@@ -1637,7 +1638,7 @@ function RaceChart({ raceData, activePlayers, size }) {
     const endLabel = e('text',{key:'end'+player,
       x:lastX+6, y:lastY, fontSize:8, fill:color, fontWeight:'bold',
       dominantBaseline:'middle'},
-      player.charAt(0)+player.slice(1,4).toLowerCase()+' '+lastPos+'°'
+      player+' '+lastPos+'°'
     );
 
     return [
