@@ -848,8 +848,8 @@ function Tabla({ fdg, elim, champ, onNavigate }) {
         PLAYERS.map(p=>e('button',{key:p,
           onClick:()=>onNavigate&&onNavigate({type:'estadisticas',player:p}),
           style:{padding:'4px 10px',borderRadius:16,border:'2px solid #'+PC[p],
-            background:'transparent',color:'#'+PC[p],fontWeight:600,fontSize:11,
-            cursor:'pointer',fontFamily:'inherit'}
+            background:'#'+PC[p],color:'#fff',fontWeight:600,fontSize:11,
+            cursor:'pointer',fontFamily:'inherit',opacity:0.9}
         },p))
       )
     ),
@@ -873,7 +873,7 @@ function PosicionesView({ fdg }) {
   const b3 = getBestThirds(fdg.results);
   const groupsDone = GK.filter(g => { const s=calcStandings(g,fdg.results); return s.length>0&&s[0].pj>0; }).length;
   return e('div',{className:'view'},
-    e('div',{className:'sec'},'📊 Posiciones por grupo'),
+    e('div',{className:'sec'},'📈 Posiciones por grupo'),
     e('div',{className:'grd'},...GK.map(g=>{const s=calcStandings(g,fdg.results);return e('div',{key:g,className:'gt'},
       e('div',{className:'gth'},'Grupo '+g),
       e('div',{className:'gtw'},e('table',{className:'st'},
@@ -1215,16 +1215,23 @@ function calcPlayerCatStats(player, matches, preds, results, catList) {
   return stats;
 }
 
-function RadarChart({ catLabels, playerStats, playerColor, size }) {
+function RadarChart({ catLabels, allPlayerStats, size }) {
+  // allPlayerStats: [{player, color, stats}]
   const e = React.createElement;
   const n = catLabels.length;
   const cx = size/2, cy = size/2;
-  const R = size*0.36;
-  const labelR = size*0.47;
-  const rings = [0.25,0.5,0.75,1.0];
-
-  const angle = (i) => (Math.PI*2*i/n) - Math.PI/2;
+  const R = size * 0.34;
+  const labelR = size * 0.46;
+  const rings = [0.25, 0.5, 0.75, 1.0];
+  const angle = i => (Math.PI*2*i/n) - Math.PI/2;
   const pt = (r,i) => [cx + r*Math.cos(angle(i)), cy + r*Math.sin(angle(i))];
+
+  // Grid rings
+  const ringPaths = rings.map((f,ri) => {
+    const pts = catLabels.map((_,i) => pt(R*f,i));
+    const d = pts.map((p,i) => (i===0?`M${p[0]},${p[1]}`:`L${p[0]},${p[1]}`)).join(' ')+'Z';
+    return e('path',{key:'ring'+ri,d,fill:'none',stroke:'#1E3A6B',strokeWidth:ri===3?1.5:0.5,opacity:0.5});
+  });
 
   // Axes
   const axes = catLabels.map((_,i) => {
@@ -1232,99 +1239,146 @@ function RadarChart({ catLabels, playerStats, playerColor, size }) {
     return e('line',{key:'ax'+i,x1:cx,y1:cy,x2:x,y2:y,stroke:'#1E3A6B',strokeWidth:1});
   });
 
-  // Ring grid
-  const ringPaths = rings.map((f,ri) => {
-    const pts = catLabels.map((_,i)=>pt(R*f,i));
-    const d = pts.map((p,i)=>(i===0?`M${p[0]},${p[1]}`:`L${p[0]},${p[1]}`)).join(' ')+'Z';
-    return e('path',{key:'ring'+ri,d,fill:'none',stroke:'#1E3A6B',strokeWidth:ri===3?1.5:0.5,opacity:0.6});
+  // One polygon per player
+  const polygons = allPlayerStats.map(({player,color,stats}) => {
+    const pts = catLabels.map((c,i) => {
+      const st = stats[c.k];
+      const ratio = st && st.possible>0 ? Math.min(st.earned/st.possible,1) : 0;
+      return pt(R*ratio,i);
+    });
+    const d = pts.map((p,i) => (i===0?`M${p[0]},${p[1]}`:`L${p[0]},${p[1]}`)).join(' ')+'Z';
+    return e('path',{key:'poly'+player,d,fill:color,fillOpacity:0.18,stroke:color,strokeWidth:2});
   });
 
-  // Player polygon — value = earned/possible ratio (0-1), 0 if no data
-  const playerPts = catLabels.map((c,i) => {
-    const st = playerStats[c.k];
-    const ratio = st && st.possible>0 ? Math.min(st.earned/st.possible,1) : 0;
-    return pt(R*ratio, i);
-  });
-  const playerPath = playerPts.map((p,i)=>(i===0?`M${p[0]},${p[1]}`:`L${p[0]},${p[1]}`)).join(' ')+'Z';
-
-  // Labels
+  // Labels with per-player colored stats
   const labels = catLabels.map((c,i) => {
     const [lx,ly] = pt(labelR,i);
-    const anchor = lx < cx-5 ? 'end' : lx > cx+5 ? 'start' : 'middle';
-    const st = playerStats[c.k];
-    const pct = st && st.possible>0 ? Math.round(100*st.earned/st.possible) : 0;
+    const anchor = lx < cx-8 ? 'end' : lx > cx+8 ? 'start' : 'middle';
+    // Build stat lines per player
+    const statLines = allPlayerStats.map(({player,color,stats}) => {
+      const st = stats[c.k];
+      return {color, text: st && st.possible>0 ? `${st.earned}/${st.possible}` : '-'};
+    });
     return e('text',{key:'lbl'+i,x:lx,y:ly,textAnchor:anchor,dominantBaseline:'middle',
-      fontSize:9,fill:'#94a3b8',fontFamily:'system-ui'},
+      fontSize:9,fill:'#64748b',fontFamily:'system-ui'},
       e('tspan',{x:lx,dy:0},c.l),
-      e('tspan',{x:lx,dy:10,fill:playerColor,fontWeight:'bold'},`${st?.earned||0}/${st?.possible||0}`)
+      ...statLines.map(({color,text},si) =>
+        e('tspan',{key:si,x:lx,dy:10,fill:color,fontWeight:'bold',fontSize:8},
+          si>0 ? ' · '+text : text
+        )
+      )
     );
   });
 
   return e('svg',{width:size,height:size,viewBox:`0 0 ${size} ${size}`,style:{overflow:'visible'}},
-    ...ringPaths,
-    ...axes,
-    e('path',{d:playerPath,fill:playerColor,fillOpacity:0.25,stroke:playerColor,strokeWidth:2}),
-    ...labels
+    ...ringPaths, ...axes, ...polygons, ...labels
   );
 }
 
 function EstadisticasView({ fdg, elim, onNavigate, initPlayer }) {
   const e = React.createElement;
-  const [selected, setSelected] = React.useState(initPlayer||PLAYERS[0]);
-  React.useEffect(()=>{ if(initPlayer) setSelected(initPlayer); },[initPlayer]);
+  const [primary, setPrimary] = React.useState(initPlayer||PLAYERS[0]);
+  const [compared, setCompared] = React.useState(new Set()); // players being compared
 
-  const color = '#'+PC[selected];
-  const fdgStats = calcPlayerCatStats(selected, FDG, fdg.preds, fdg.results, CATS_FDG_LABELS);
-  const elimStats = calcPlayerCatStats(selected, ELIM, elim.preds, elim.results, CATS_ELIM_LABELS);
+  React.useEffect(()=>{ if(initPlayer) setPrimary(initPlayer); },[initPlayer]);
 
-  // Totals for display
-  const fdgTotal = Object.values(fdgStats).reduce((s,v)=>s+v.earned,0);
-  const elimTotal = Object.values(elimStats).reduce((s,v)=>s+v.earned,0);
+  const toggleCompare = p => {
+    if(p === primary) return; // can't compare with self
+    setCompared(prev => {
+      const next = new Set(prev);
+      next.has(p) ? next.delete(p) : next.add(p);
+      return next;
+    });
+  };
+
+  // Build allPlayers for chart: primary first, then compared
+  const activePlayers = [primary, ...Array.from(compared)];
+  const buildPlayerData = (p, matches, preds, results, cats) => ({
+    player: p, color: '#'+PC[p],
+    stats: calcPlayerCatStats(p, matches, preds, results, cats)
+  });
+
+  const fdgData  = activePlayers.map(p => buildPlayerData(p, FDG,  fdg.preds,  fdg.results,  CATS_FDG_LABELS));
+  const elimData = activePlayers.map(p => buildPlayerData(p, ELIM, elim.preds, elim.results, CATS_ELIM_LABELS));
+
+  const total = (data) => Object.values(data.stats).reduce((s,v)=>s+v.earned,0);
+
+  const PlayerBtn = ({p}) => {
+    const isPrimary = p === primary;
+    const isCompared = compared.has(p);
+    const col = '#'+PC[p];
+    return e('div',{key:p, style:{display:'flex',alignItems:'center',gap:4}},
+      // Main button — click to set as primary
+      e('button',{
+        onClick:()=>{ setPrimary(p); setCompared(new Set()); },
+        style:{
+          padding:'5px 11px', borderRadius:20, border:`2px solid ${col}`,
+          background: isPrimary ? col : '#f8fafc',
+          color: isPrimary ? '#fff' : col,
+          fontWeight:700, fontSize:12, cursor:'pointer', fontFamily:'inherit',
+          transition:'all .15s', outline:'none'
+        }
+      }, p),
+      // Compare checkbox — only shown when not primary
+      !isPrimary && e('button',{
+        onClick:()=>toggleCompare(p),
+        title: isCompared ? 'Quitar comparación' : 'Comparar',
+        style:{
+          width:20, height:20, borderRadius:4,
+          border:`2px solid ${col}`,
+          background: isCompared ? col : '#fff',
+          color: isCompared ? '#fff' : col,
+          fontSize:11, fontWeight:700, cursor:'pointer',
+          display:'flex', alignItems:'center', justifyContent:'center',
+          padding:0, lineHeight:1, flexShrink:0
+        }
+      }, isCompared ? '✓' : '+')
+    );
+  };
+
+  // Legend for active players
+  const Legend = () => e('div',{style:{display:'flex',flexWrap:'wrap',gap:8,marginBottom:8,justifyContent:'center'}},
+    activePlayers.map(p =>
+      e('div',{key:p,style:{display:'flex',alignItems:'center',gap:4}},
+        e('div',{style:{width:10,height:10,borderRadius:'50%',background:'#'+PC[p]}}),
+        e('span',{style:{fontSize:11,fontWeight:600,color:'#'+PC[p]}},p),
+        e('span',{style:{fontSize:10,color:'#94a3b8'}},
+          '('+(fdgData.find(d=>d.player===p)?total(fdgData.find(d=>d.player===p)):0)+
+          '+'+(elimData.find(d=>d.player===p)?total(elimData.find(d=>d.player===p)):0)+' pts)'
+        )
+      )
+    )
+  );
 
   return e('div',{className:'view'},
     e('div',{className:'sec'},'📊 Estadísticas por jugador'),
 
-    // Player selector
-    e('div',{style:{display:'flex',flexWrap:'wrap',gap:6,marginBottom:14}},
-      PLAYERS.map(p => e('button',{key:p,
-        onClick:()=>setSelected(p),
-        style:{
-          padding:'5px 12px',borderRadius:20,border:'2px solid',fontWeight:600,
-          fontSize:12,cursor:'pointer',fontFamily:'inherit',
-          borderColor:'#'+PC[p],
-          background:selected===p?'#'+PC[p]:'transparent',
-          color:selected===p?'#fff':'#'+PC[p],
-          transition:'all .15s'
-        }
-      },p))
+    // Player selector row
+    e('div',{style:{display:'flex',flexWrap:'wrap',gap:6,marginBottom:6}},
+      PLAYERS.map(p => e(PlayerBtn,{key:p,p}))
+    ),
+    compared.size > 0 && e('div',{style:{fontSize:10,color:'#94a3b8',marginBottom:10}},
+      '✓ comparando con: '+Array.from(compared).join(', ')+' — clic en + para agregar/quitar'
+    ),
+    compared.size === 0 && e('div',{style:{fontSize:10,color:'#94a3b8',marginBottom:10}},
+      'Clic en + junto a otro jugador para comparar'
     ),
 
-    // Charts
     e('div',{style:{display:'flex',flexDirection:'column',gap:20}},
-
       // Grupos
-      e('div',{style:{background:'#fff',borderRadius:12,padding:'12px 8px',border:'1px solid #e2e8f0'}},
-        e('div',{style:{textAlign:'center',fontWeight:700,fontSize:13,color:'#0F1C3F',marginBottom:4,fontFamily:'Georgia,serif'}},
-          '⚽ Fase de Grupos'
-        ),
-        e('div',{style:{textAlign:'center',fontSize:11,color:'#94a3b8',marginBottom:8}},
-          `Total: ${fdgTotal} pts`
-        ),
+      e('div',{style:{background:'#fff',borderRadius:12,padding:'12px 8px 16px',border:'1px solid #e2e8f0'}},
+        e('div',{style:{textAlign:'center',fontWeight:700,fontSize:13,color:'#0F1C3F',marginBottom:6,fontFamily:'Georgia,serif'}},'⚽ Fase de Grupos'),
+        e(Legend),
         e('div',{style:{display:'flex',justifyContent:'center'}},
-          e(RadarChart,{catLabels:CATS_FDG_LABELS,playerStats:fdgStats,playerColor:color,size:280})
+          e(RadarChart,{catLabels:CATS_FDG_LABELS,allPlayerStats:fdgData,size:290})
         )
       ),
-
       // Eliminatorias
-      e('div',{style:{background:'#fff',borderRadius:12,padding:'12px 8px',border:'1px solid #e2e8f0'}},
-        e('div',{style:{textAlign:'center',fontWeight:700,fontSize:13,color:'#0F1C3F',marginBottom:4,fontFamily:'Georgia,serif'}},
-          '🏟️ Eliminatorias'
-        ),
-        e('div',{style:{textAlign:'center',fontSize:11,color:'#94a3b8',marginBottom:8}},
-          `Total: ${elimTotal} pts`
-        ),
+      e('div',{style:{background:'#fff',borderRadius:12,padding:'12px 8px 16px',border:'1px solid #e2e8f0'}},
+        e('div',{style:{textAlign:'center',fontWeight:700,fontSize:13,color:'#0F1C3F',marginBottom:6,fontFamily:'Georgia,serif'}},'🏟️ Eliminatorias'),
+        e(Legend),
         e('div',{style:{display:'flex',justifyContent:'center'}},
-          e(RadarChart,{catLabels:CATS_ELIM_LABELS,playerStats:elimStats,playerColor:color,size:300})
+          e(RadarChart,{catLabels:CATS_ELIM_LABELS,allPlayerStats:elimData,size:310})
         )
       )
     )
@@ -1510,7 +1564,7 @@ function App() {
 
   if(!user)return React.createElement(React.Fragment,null,React.createElement('style',null,css),React.createElement(LoginScreen,{onLogin:login}));
 
-  const tabs=[{id:'tabla',l:'🏆 Tabla'},{id:'grupos',l:'⚽ Grupos'},{id:'pos',l:'📊 Posiciones'},{id:'elim',l:'🏟️ Elim.'},{id:'camp',l:'🏆 Campeón'},{id:'reglas',l:'📋 Reglas'},{id:'estadisticas',l:'📊 Estadísticas'}];
+  const tabs=[{id:'tabla',l:'🏆 Tabla'},{id:'grupos',l:'⚽ Grupos'},{id:'pos',l:'📈 Posiciones'},{id:'elim',l:'🏟️ Elim.'},{id:'camp',l:'🏆 Campeón'},{id:'reglas',l:'📋 Reglas'},{id:'estadisticas',l:'📊 Estadísticas'}];
   const e=React.createElement;
 
   return e(React.Fragment,null,
