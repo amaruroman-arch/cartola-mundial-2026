@@ -1589,6 +1589,26 @@ function calcRaceTrend(fdgPreds, fdgResults, elimPreds, elimResults) {
   });
 }
 
+// Convierte una lista de puntos [x,y] en un path SVG suavizado (Catmull-Rom → Bézier)
+function smoothPath(pts) {
+  if(pts.length < 3) {
+    return pts.map(([x,y],i) => (i===0?`M${x},${y}`:`L${x},${y}`)).join(' ');
+  }
+  let d = `M${pts[0][0]},${pts[0][1]}`;
+  for(let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i === 0 ? 0 : i - 1];
+    const p1 = pts[i];
+    const p2 = pts[i + 1];
+    const p3 = pts[i + 2 < pts.length ? i + 2 : i + 1];
+    const c1x = p1[0] + (p2[0] - p0[0]) / 6;
+    const c1y = p1[1] + (p2[1] - p0[1]) / 6;
+    const c2x = p2[0] - (p3[0] - p1[0]) / 6;
+    const c2y = p2[1] - (p3[1] - p1[1]) / 6;
+    d += ` C${c1x},${c1y} ${c2x},${c2y} ${p2[0]},${p2[1]}`;
+  }
+  return d;
+}
+
 function TrendChart({ allPlayerData, size }) {
   // allPlayerData: [{player, color, dateTrend:[{label,cum,isElim}]}]
   const e = React.createElement;
@@ -1638,15 +1658,19 @@ function TrendChart({ allPlayerData, size }) {
     e('text',{key:'se', x:sepX+3, y:PAD.top-8, fontSize:7, fill:'#F59E0B'},'ELIM.'),
   ] : [];
 
-  // Player lines — every 3-day tick, dot only at last point
+  // Player lines — curva suave, con un punto visible en cada marca de 3 días
   const playerElems = allPlayerData.flatMap(({player, color, dateTrend}) => {
     if(!dateTrend || dateTrend.length === 0) return [];
     const pts = dateTrend.map((t,i) => [xScale(i), yScale(t.cum)]);
-    const d = pts.map(([x,y],i) => (i===0?`M${x},${y}`:`L${x},${y}`)).join(' ');
+    const d = smoothPath(pts);
     const [lx,ly] = pts[pts.length-1];
     const lastCum = dateTrend[dateTrend.length-1].cum;
     return [
       e('path',{key:'l'+player, d, fill:'none', stroke:color, strokeWidth:2, strokeLinejoin:'round', strokeLinecap:'round'}),
+      // Puntos pequeños en cada tick intermedio, para que se note el avance cada 3 días
+      ...pts.slice(0,-1).map(([x,y],i) =>
+        e('circle',{key:'pt'+player+i, cx:x, cy:y, r:2.5, fill:color, stroke:'#fff', strokeWidth:1})
+      ),
       e('circle',{key:'dot'+player, cx:lx, cy:ly, r:4, fill:'#fff', stroke:color, strokeWidth:2}),
       e('text',{key:'lbl'+player, x:lx+5, y:ly, fontSize:8, fill:color, fontWeight:'bold', dominantBaseline:'middle'}, lastCum+''),
     ];
@@ -1710,7 +1734,7 @@ function RaceChart({ raceData, size }) {
     e('text',{key:'se', x:sepX+3, y:PAD.top-10, fontSize:7, fill:'#F59E0B'},'ELIM.'),
   ] : [];
 
-  // One line per player
+  // One line per player — curva suave, con un punto visible en cada marca de 3 días
   const playerLines = PLAYERS.flatMap(player => {
     const color = PC[player];
     const positions = raceData.map(tick => {
@@ -1718,11 +1742,14 @@ function RaceChart({ raceData, size }) {
       return r ? r.pos : nPlayers;
     });
     const pts = positions.map((pos,i) => [xScale(i), yScale(pos)]);
-    const d = pts.map(([x,y],i) => (i===0?`M${x},${y}`:`L${x},${y}`)).join(' ');
+    const d = smoothPath(pts);
     const [lx,ly] = pts[pts.length-1];
     const lastPos = positions[positions.length-1];
     return [
       e('path',{key:'l'+player, d, fill:'none', stroke:color, strokeWidth:2.5, strokeLinejoin:'round', strokeLinecap:'round'}),
+      ...pts.slice(0,-1).map(([x,y],i) =>
+        e('circle',{key:'pt'+player+i, cx:x, cy:y, r:2.5, fill:color, stroke:'#fff', strokeWidth:1})
+      ),
       e('circle',{key:'dot'+player, cx:lx, cy:ly, r:3.5, fill:'#fff', stroke:color, strokeWidth:2}),
       e('text',{key:'end'+player, x:lx+5, y:ly, fontSize:8, fill:color, fontWeight:'bold', dominantBaseline:'middle'},
         player+' '+lastPos+'°')
