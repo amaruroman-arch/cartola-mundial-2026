@@ -1300,12 +1300,27 @@ function EstadisticasView({ fdg, elim, onNavigate, initPlayer }) {
 
   const fdgData  = activePlayers.map(p => buildPlayerData(p, FDG,  fdg.preds,  fdg.results,  CATS_FDG_LABELS));
   const elimData = activePlayers.map(p => buildPlayerData(p, ELIM, elim.preds, elim.results, CATS_ELIM_LABELS));
+  // Date-based data (3-day ticks) shared for both charts
+  const {ticks: dateTicks, byPlayer: dateByPlayer} = React.useMemo(
+    ()=>calcAllDateTrends(fdg.preds, fdg.results, elim.preds, elim.results),
+    [fdg.results, elim.results]
+  );
   const trendData = activePlayers.map(p => ({
     player: p, color: PC[p],
-    trend: calcTrendPoints(p, fdg.preds, fdg.results, elim.preds, elim.results)
+    dateTrend: dateByPlayer[p] || []
   }));
-  // Race data always uses ALL players for correct rankings, filtered to active for display
-  const raceData = calcRaceTrend(fdg.preds, fdg.results, elim.preds, elim.results);
+  // Race: build from date ticks — rankings at each tick using ALL players
+  const raceData = dateTicks.map((tick,i) => {
+    const standings = PLAYERS.map(p => ({
+      player: p,
+      cum: dateByPlayer[p]?.[i]?.cum || 0
+    })).sort((a,b)=>b.cum-a.cum);
+    return {
+      label: tick.label,
+      isElim: tick.isElim,
+      rankings: standings.map((s,rank)=>({...s,pos:rank+1}))
+    };
+  });
 
   const total = (data) => Object.values(data.stats).reduce((s,v)=>s+v.earned,0);
 
@@ -1407,7 +1422,7 @@ function EstadisticasView({ fdg, elim, onNavigate, initPlayer }) {
           '1° arriba · 7° abajo · muestra todos los jugadores · se actualiza con cada resultado'
         ),
         e('div',{style:{display:'flex',justifyContent:'center',overflowX:'auto'}},
-          e(RaceChart,{raceData, activePlayers:PLAYERS, size:340})
+          e(RaceChart,{raceData, size:340})
         )
       )
     )
@@ -1427,6 +1442,105 @@ const TREND_PHASES = [
   {label:'Semifinal',  ids:[101,102],                               type:'elim'},
   {label:'3°/Final',   ids:[103,104],                               type:'elim'},
 ];
+
+// ── Date-based timeline (3-day intervals) ────────────────────────────────────
+// Build a map of matchId → date from FDG and ELIM arrays
+function buildMatchDateMap() {
+  const map = {};
+  const MES = {ene:0,feb:1,mar:2,abr:3,may:4,jun:5,jul:6,ago:7,sep:8,oct:9,nov:10,dic:11};
+  const parse = s => {
+    const m = s.match(/(\d+)-(\w+)\s+(\d+):(\d+)/);
+    if(!m) return null;
+    return new Date(2026, MES[m[2].toLowerCase()]??5, parseInt(m[1]), parseInt(m[3]), parseInt(m[4]));
+  };
+  FDG.forEach(m  => { map[m[0]]  = {date: parse(m[2]),  type:'fdg'}; });
+  ELIM.forEach(m => { map[m[0]] = {date: parse(m[2]), type:'elim'}; });
+  return map;
+}
+
+// Generate 3-day tick points covering all matches that have results
+// Returns [{date, label, isElim}]
+function buildTimeline(fdgResults, elimResults) {
+  const matchDates = buildMatchDateMap();
+  // Find all matches with results
+  const playedDates = [];
+  Object.entries({...fdgResults, ...elimResults}).forEach(([id,r]) => {
+    if(!r?.g && !r?.fin) return;
+    const info = matchDates[parseInt(id)];
+    if(info?.date) playedDates.push(info.date);
+  });
+  if(playedDates.length === 0) return [];
+
+  const start = new Date(2026,5,11); // June 11 = tournament start
+  const lastPlayed = new Date(Math.max(...playedDates.map(d=>d.getTime())));
+  // Round lastPlayed up to midnight of next day
+  const end = new Date(lastPlayed);
+  end.setHours(23,59,0,0);
+
+  // Generate ticks every 3 days from start to end
+  const ticks = [];
+  const cur = new Date(start);
+  while(cur <= end) {
+    const d = new Date(cur);
+    const day = d.getDate();
+    const mon = d.toLocaleString('es',{month:'short'});
+    // Is this date in elim territory? (after June 27)
+    const isElim = d >= new Date(2026,5,28);
+    ticks.push({date: d, label: `${day}-${mon}`, isElim});
+    cur.setDate(cur.getDate()+3);
+  }
+  // Always include last played date if not already there
+  const lastTick = ticks[ticks.length-1];
+  if(lastTick && Math.abs(lastTick.date - lastPlayed) > 1000*60*60*24) {
+    const isElim = lastPlayed >= new Date(2026,5,28);
+    ticks.push({date: lastPlayed, label: `${lastPlayed.getDate()}-${lastPlayed.toLocaleString('es',{month:'short'})}`, isElim});
+  }
+  return ticks;
+}
+
+// Compute cumulative points for a player at each tick date
+function calcDateTrend(player, fdgPreds, fdgResults, elimPreds, elimResults, ticks) {
+  const matchDates = buildMatchDateMap();
+  // Pre-compute score for each match
+  const matchScores = {};
+  Object.keys(matchDates).forEach(id => {
+    const nId = parseInt(id);
+    const info = matchDates[nId];
+    const p = info.type==='fdg' ? fdgPreds?.[nId]?.[player]   : elimPreds?.[nId]?.[player];
+    const r = info.type==='fdg' ? fdgResults?.[nId]           : elimResults?.[nId];
+    matchScores[nId] = scoreMatch(p, r, info.type==='elim');
+  });
+
+  let cum = 0;
+  return ticks.map(tick => {
+    // Add points from all matches played up to (and including) this tick date
+    Object.keys(matchDates).forEach(id => {
+      const nId = parseInt(id);
+      const info = matchDates[nId];
+      // Count match if its date <= tick date and it hasn't been counted yet
+      // We'll recompute from scratch for accuracy
+    });
+    // Recompute cumulative up to tick.date
+    let c = 0;
+    Object.keys(matchDates).forEach(id => {
+      const nId = parseInt(id);
+      const info = matchDates[nId];
+      if(!info.date || info.date > tick.date) return;
+      c += matchScores[nId] || 0;
+    });
+    return {label: tick.label, cum: c, isElim: tick.isElim};
+  });
+}
+
+function calcAllDateTrends(fdgPreds, fdgResults, elimPreds, elimResults) {
+  const ticks = buildTimeline(fdgResults, elimResults);
+  if(ticks.length === 0) return {ticks:[], byPlayer:{}};
+  const byPlayer = {};
+  PLAYERS.forEach(p => {
+    byPlayer[p] = calcDateTrend(p, fdgPreds, fdgResults, elimPreds, elimResults, ticks);
+  });
+  return {ticks, byPlayer};
+}
 
 function calcTrendPoints(player, fdgPreds, fdgResults, elimPreds, elimResults) {
   // Returns array of {label, pts, cum} only for phases with at least 1 result
@@ -1476,93 +1590,73 @@ function calcRaceTrend(fdgPreds, fdgResults, elimPreds, elimResults) {
 }
 
 function TrendChart({ allPlayerData, size }) {
-  // allPlayerData: [{player, color, trend:[{label,pts,cum}]}]
+  // allPlayerData: [{player, color, dateTrend:[{label,cum,isElim}]}]
   const e = React.createElement;
-  const W = size, H = Math.round(size * 0.55);
-  const PAD = {top:20, right:16, bottom:48, left:38};
+  const W = size, H = Math.round(size * 0.6);
+  const PAD = {top:20, right:36, bottom:52, left:40};
   const chartW = W - PAD.left - PAD.right;
   const chartH = H - PAD.top - PAD.bottom;
-  const n = TREND_PHASES.length; // 8 phases
 
-  // Max cumulative pts across players for Y scale (only played phases)
-  const allCums = allPlayerData.flatMap(d => d.trend.map(t => t.cum));
-  const maxPts = Math.max(...allCums, 1);
-  // Round up to nice number
-  const yMax = Math.ceil(maxPts / 50) * 50 || 50;
+  const ticks = allPlayerData[0]?.dateTrend || [];
+  const n = ticks.length;
+  if(n === 0) return e('div',{style:{textAlign:'center',color:'#94a3b8',padding:20,fontSize:12}},'Sin datos aún');
 
-  // Use active (truncated) phase count for x scale
-  const activeCount = allPlayerData[0]?.trend?.length || n;
-  const xScale = i => PAD.left + (i / Math.max(activeCount-1,1)) * chartW;
+  const allCums = allPlayerData.flatMap(d => (d.dateTrend||[]).map(t => t.cum));
+  const maxPts = Math.max(...allCums, 50);
+  const yMax = Math.ceil(maxPts / 50) * 50;
+
+  const xScale = i => PAD.left + (i / Math.max(n-1,1)) * chartW;
   const yScale = v => PAD.top + chartH - (v / yMax) * chartH;
 
-  // Y gridlines + labels
+  // Y gridlines every 50
   const yTicks = [];
-  const yStep = yMax <= 100 ? 20 : yMax <= 300 ? 50 : 100;
-  for(let v = 0; v <= yMax; v += yStep) {
+  for(let v = 0; v <= yMax; v += 50) {
     const y = yScale(v);
     yTicks.push(
-      e('line',{key:'yg'+v, x1:PAD.left, y1:y, x2:W-PAD.right, y2:y,
-        stroke:'#E2E8F0', strokeWidth:1}),
-      e('text',{key:'yl'+v, x:PAD.left-4, y:y, textAnchor:'end',
-        dominantBaseline:'middle', fontSize:8, fill:'#94a3b8'}, v)
+      e('line',{key:'yg'+v, x1:PAD.left, y1:y, x2:W-PAD.right, y2:y, stroke:'#E2E8F0', strokeWidth:1}),
+      e('text',{key:'yl'+v, x:PAD.left-4, y, textAnchor:'end', dominantBaseline:'middle', fontSize:8, fill:'#94a3b8'}, v)
     );
   }
 
-  // X axis labels — only for phases with data
-  const activeTrend = allPlayerData[0]?.trend || [];
-  const activeN = activeTrend.length;
-  const xLabels = activeTrend.map((t,i) => {
-    const ph = TREND_PHASES.find(p=>p.label===t.label);
-    const isElim = ph?.type==='elim';
+  // X axis date labels — skip some if crowded
+  const step = n > 12 ? 2 : 1;
+  const xLabels = ticks.map((t,i) => {
+    if(i % step !== 0 && i !== n-1) return null;
     return e('text',{key:'xl'+i, x:xScale(i), y:H-PAD.bottom+12,
-      textAnchor:'middle', fontSize:8,
-      fill: isElim ? '#F59E0B' : '#64748b',
-      fontWeight: isElim ? '600' : '400'
-    }, t.label);
-  });
+      textAnchor:'middle', fontSize:7.5,
+      fill: t.isElim ? '#F59E0B' : '#64748b',
+      fontWeight: t.isElim ? '600' : '400'}, t.label);
+  }).filter(Boolean);
 
-  // Vertical separator between groups and elim (only if both present)
-  const lastGroupIdx = activeTrend.reduce((acc,t,i)=>TREND_PHASES.find(p=>p.label===t.label)?.type==='fdg'?i:acc,-1);
-  const firstElimIdx = activeTrend.findIndex(t=>TREND_PHASES.find(p=>p.label===t.label)?.type==='elim');
-  const sepX = lastGroupIdx>=0 && firstElimIdx>=0 ? (xScale(lastGroupIdx)+xScale(firstElimIdx))/2 : -999;
-  const separator = [
+  // Separator grupos/elim
+  const firstElimIdx = ticks.findIndex(t => t.isElim);
+  const sepX = firstElimIdx > 0 ? (xScale(firstElimIdx-1)+xScale(firstElimIdx))/2 : -999;
+  const separator = sepX > 0 ? [
     e('line',{key:'sep', x1:sepX, y1:PAD.top, x2:sepX, y2:PAD.top+chartH,
       stroke:'#F59E0B', strokeWidth:1, strokeDasharray:'3,3', opacity:0.5}),
-    e('text',{key:'sep-g', x:PAD.left+2, y:PAD.top-6, fontSize:7, fill:'#64748b'},'GRUPOS'),
-    e('text',{key:'sep-e', x:sepX+3, y:PAD.top-6, fontSize:7, fill:'#F59E0B'},'ELIMINATORIAS'),
-  ].filter(Boolean);
+    e('text',{key:'sg', x:PAD.left+2, y:PAD.top-8, fontSize:7, fill:'#64748b'},'GRUPOS'),
+    e('text',{key:'se', x:sepX+3, y:PAD.top-8, fontSize:7, fill:'#F59E0B'},'ELIM.'),
+  ] : [];
 
-  // Player lines + dots
-  const playerElems = allPlayerData.flatMap(({player, color, trend}) => {
-    const pts = trend.map((t,i) => [xScale(i), yScale(t.cum)]);
-    const pathD = pts.map(([x,y],i) => (i===0?`M${x},${y}`:`L${x},${y}`)).join(' ');
-    const elems = [
-      e('path',{key:'line'+player, d:pathD,
-        fill:'none', stroke:color, strokeWidth:2.5, strokeLinejoin:'round', strokeLinecap:'round'})
+  // Player lines — every 3-day tick, dot only at last point
+  const playerElems = allPlayerData.flatMap(({player, color, dateTrend}) => {
+    if(!dateTrend || dateTrend.length === 0) return [];
+    const pts = dateTrend.map((t,i) => [xScale(i), yScale(t.cum)]);
+    const d = pts.map(([x,y],i) => (i===0?`M${x},${y}`:`L${x},${y}`)).join(' ');
+    const [lx,ly] = pts[pts.length-1];
+    const lastCum = dateTrend[dateTrend.length-1].cum;
+    return [
+      e('path',{key:'l'+player, d, fill:'none', stroke:color, strokeWidth:2, strokeLinejoin:'round', strokeLinecap:'round'}),
+      e('circle',{key:'dot'+player, cx:lx, cy:ly, r:4, fill:'#fff', stroke:color, strokeWidth:2}),
+      e('text',{key:'lbl'+player, x:lx+5, y:ly, fontSize:8, fill:color, fontWeight:'bold', dominantBaseline:'middle'}, lastCum+''),
     ];
-    trend.forEach((t,i) => {
-      const [x,y] = pts[i];
-      elems.push(
-        e('circle',{key:'dot'+player+i, cx:x, cy:y, r:3.5,
-          fill:'#fff', stroke:color, strokeWidth:2}),
-        // Tooltip-style label on last point
-        i === trend.length-1 && e('text',{key:'end'+player,
-          x:x+5, y:y, fontSize:8, fill:color, fontWeight:'bold',
-          dominantBaseline:'middle'}, t.cum+'')
-      );
-    });
-    return elems;
   });
 
-  // Axes
   const axes = [
-    e('line',{key:'ax', x1:PAD.left, y1:PAD.top, x2:PAD.left, y2:PAD.top+chartH,
-      stroke:'#CBD5E1', strokeWidth:1}),
-    e('line',{key:'ay', x1:PAD.left, y1:PAD.top+chartH, x2:W-PAD.right, y2:PAD.top+chartH,
-      stroke:'#CBD5E1', strokeWidth:1}),
-    e('text',{key:'yaxis', x:10, y:PAD.top+chartH/2,
-      textAnchor:'middle', fontSize:8, fill:'#64748b',
-      transform:`rotate(-90,10,${PAD.top+chartH/2})`}, 'Puntos acumulados'),
+    e('line',{key:'axv', x1:PAD.left, y1:PAD.top, x2:PAD.left, y2:PAD.top+chartH, stroke:'#CBD5E1', strokeWidth:1}),
+    e('line',{key:'axh', x1:PAD.left, y1:PAD.top+chartH, x2:W-PAD.right, y2:PAD.top+chartH, stroke:'#CBD5E1', strokeWidth:1}),
+    e('text',{key:'ya', x:11, y:PAD.top+chartH/2, textAnchor:'middle', fontSize:8, fill:'#64748b',
+      transform:`rotate(-90,11,${PAD.top+chartH/2})`},'Puntos acumulados'),
   ];
 
   return e('svg',{width:W, height:H, viewBox:`0 0 ${W} ${H}`, style:{overflow:'visible'}},
@@ -1571,98 +1665,79 @@ function TrendChart({ allPlayerData, size }) {
 }
 
 
-function RaceChart({ raceData, activePlayers, size }) {
-  // raceData: [{label, rankings:[{player,pos,cum}]}]
-  // Y axis: position 1 (top) to 7 (bottom)
+function RaceChart({ raceData, size }) {
+  // raceData: [{label, isElim, rankings:[{player,pos,cum}]}]
   const e = React.createElement;
-  if(!raceData || raceData.length === 0) return e('div',{style:{textAlign:'center',color:'#94a3b8',padding:20,fontSize:12}},'Sin datos aún');
+  if(!raceData || raceData.length === 0)
+    return e('div',{style:{textAlign:'center',color:'#94a3b8',padding:20,fontSize:12}},'Sin datos aún');
 
   const W = size, H = Math.round(size * 0.65);
-  const PAD = {top:24, right:50, bottom:48, left:32};
+  const PAD = {top:24, right:60, bottom:52, left:32};
   const chartW = W - PAD.left - PAD.right;
   const chartH = H - PAD.top - PAD.bottom;
-  const nPhases = raceData.length;
-  const nPlayers = PLAYERS.length; // 7
+  const nTicks   = raceData.length;
+  const nPlayers = PLAYERS.length;
 
-  const xScale = i => PAD.left + (i / Math.max(nPhases-1,1)) * chartW;
-  // Position 1 at top, 7 at bottom
+  const xScale = i => PAD.left + (i / Math.max(nTicks-1,1)) * chartW;
   const yScale = pos => PAD.top + ((pos-1) / (nPlayers-1)) * chartH;
 
-  // Grid lines (horizontal per position)
+  // Y grid — one line per position
   const yGrid = Array.from({length:nPlayers},(_,i) => {
-    const pos = i+1;
-    const y = yScale(pos);
+    const pos=i+1, y=yScale(pos);
     return [
-      e('line',{key:'yg'+pos, x1:PAD.left, y1:y, x2:W-PAD.right, y2:y,
-        stroke:'#E2E8F0', strokeWidth:1}),
-      e('text',{key:'yl'+pos, x:PAD.left-4, y, textAnchor:'end',
-        dominantBaseline:'middle', fontSize:8, fill:'#94a3b8'}, pos+'°')
+      e('line',{key:'yg'+pos, x1:PAD.left, y1:y, x2:W-PAD.right, y2:y, stroke:'#E2E8F0', strokeWidth:1}),
+      e('text',{key:'yl'+pos, x:PAD.left-4, y, textAnchor:'end', dominantBaseline:'middle', fontSize:8, fill:'#94a3b8'}, pos+'°')
     ];
   }).flat();
 
-  // X axis labels
-  const xLabels = raceData.map((ph,i) => {
-    const x = xScale(i);
-    const isElim = !['J1 Grupos','J2 Grupos','J3 Grupos'].includes(ph.label);
-    return e('text',{key:'xl'+i, x, y:H-PAD.bottom+12,
-      textAnchor:'middle', fontSize:8,
-      fill: isElim?'#F59E0B':'#64748b',
-      fontWeight: isElim?'600':'400'
-    }, ph.label);
-  });
+  // X axis date labels
+  const step = nTicks > 12 ? 2 : 1;
+  const xLabels = raceData.map((t,i) => {
+    if(i % step !== 0 && i !== nTicks-1) return null;
+    return e('text',{key:'xl'+i, x:xScale(i), y:H-PAD.bottom+12,
+      textAnchor:'middle', fontSize:7.5,
+      fill: t.isElim?'#F59E0B':'#64748b',
+      fontWeight: t.isElim?'600':'400'}, t.label);
+  }).filter(Boolean);
 
-  // Separator between grupos / elim
-  const groupPhases = raceData.filter(ph=>['J1 Grupos','J2 Grupos','J3 Grupos'].includes(ph.label)).length;
-  const sepElems = groupPhases > 0 && groupPhases < nPhases ? [
-    e('line',{key:'sep',
-      x1:(xScale(groupPhases-1)+xScale(groupPhases))/2, y1:PAD.top,
-      x2:(xScale(groupPhases-1)+xScale(groupPhases))/2, y2:PAD.top+chartH,
+  // Separator
+  const firstElimIdx = raceData.findIndex(t=>t.isElim);
+  const sepX = firstElimIdx > 0 ? (xScale(firstElimIdx-1)+xScale(firstElimIdx))/2 : -999;
+  const separator = sepX > 0 ? [
+    e('line',{key:'sep', x1:sepX, y1:PAD.top, x2:sepX, y2:PAD.top+chartH,
       stroke:'#F59E0B', strokeWidth:1, strokeDasharray:'3,3', opacity:0.5}),
     e('text',{key:'sg', x:PAD.left+2, y:PAD.top-10, fontSize:7, fill:'#64748b'},'GRUPOS'),
-    e('text',{key:'se', x:(xScale(groupPhases-1)+xScale(groupPhases))/2+3, y:PAD.top-10, fontSize:7, fill:'#F59E0B'},'ELIMINATORIAS'),
+    e('text',{key:'se', x:sepX+3, y:PAD.top-10, fontSize:7, fill:'#F59E0B'},'ELIM.'),
   ] : [];
 
-  // One line per active player
-  const playerLines = activePlayers.map(player => {
+  // One line per player
+  const playerLines = PLAYERS.flatMap(player => {
     const color = PC[player];
-    // Get position at each phase
-    const positions = raceData.map(ph => {
-      const r = ph.rankings.find(r=>r.player===player);
+    const positions = raceData.map(tick => {
+      const r = tick.rankings.find(r=>r.player===player);
       return r ? r.pos : nPlayers;
     });
     const pts = positions.map((pos,i) => [xScale(i), yScale(pos)]);
     const d = pts.map(([x,y],i) => (i===0?`M${x},${y}`:`L${x},${y}`)).join(' ');
-
-    const dots = pts.map(([x,y],i) =>
-      e('circle',{key:'d'+player+i, cx:x, cy:y, r:3.5, fill:'#fff', stroke:color, strokeWidth:2})
-    );
-
-    // End label: player name + position at last phase
-    const [lastX, lastY] = pts[pts.length-1];
+    const [lx,ly] = pts[pts.length-1];
     const lastPos = positions[positions.length-1];
-    const endLabel = e('text',{key:'end'+player,
-      x:lastX+6, y:lastY, fontSize:8, fill:color, fontWeight:'bold',
-      dominantBaseline:'middle'},
-      player+' '+lastPos+'°'
-    );
-
     return [
-      e('path',{key:'l'+player, d, fill:'none', stroke:color,
-        strokeWidth:2.5, strokeLinejoin:'round', strokeLinecap:'round'}),
-      ...dots, endLabel
+      e('path',{key:'l'+player, d, fill:'none', stroke:color, strokeWidth:2.5, strokeLinejoin:'round', strokeLinecap:'round'}),
+      e('circle',{key:'dot'+player, cx:lx, cy:ly, r:3.5, fill:'#fff', stroke:color, strokeWidth:2}),
+      e('text',{key:'end'+player, x:lx+5, y:ly, fontSize:8, fill:color, fontWeight:'bold', dominantBaseline:'middle'},
+        player+' '+lastPos+'°')
     ];
-  }).flat();
+  });
 
-  // Axes
   const axes = [
     e('line',{key:'axv', x1:PAD.left, y1:PAD.top, x2:PAD.left, y2:PAD.top+chartH, stroke:'#CBD5E1', strokeWidth:1}),
     e('line',{key:'axh', x1:PAD.left, y1:PAD.top+chartH, x2:W-PAD.right, y2:PAD.top+chartH, stroke:'#CBD5E1', strokeWidth:1}),
-    e('text',{key:'ylabel', x:11, y:PAD.top+chartH/2, textAnchor:'middle', fontSize:8, fill:'#64748b',
+    e('text',{key:'ya', x:11, y:PAD.top+chartH/2, textAnchor:'middle', fontSize:8, fill:'#64748b',
       transform:`rotate(-90,11,${PAD.top+chartH/2})`},'Posición'),
   ];
 
   return e('svg',{width:W, height:H, viewBox:`0 0 ${W} ${H}`, style:{overflow:'visible'}},
-    ...yGrid, ...sepElems, ...axes, ...playerLines, ...xLabels
+    ...yGrid, ...separator, ...axes, ...playerLines, ...xLabels
   );
 }
 
