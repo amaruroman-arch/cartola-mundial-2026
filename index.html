@@ -1309,7 +1309,8 @@ function EstadisticasView({ fdg, elim, onNavigate, initPlayer }) {
     player: p, color: PC[p],
     dateTrend: dateByPlayer[p] || []
   }));
-  // Race: build from date ticks — rankings at each tick using ALL players
+  // Race: build from date ticks — rankings at each tick using ALL players.
+  // El primer punto (día 0) arranca con todos en el 7° lugar, como línea de partida pareja.
   const raceData = dateTicks.map((tick,i) => {
     const standings = PLAYERS.map(p => ({
       player: p,
@@ -1318,7 +1319,9 @@ function EstadisticasView({ fdg, elim, onNavigate, initPlayer }) {
     return {
       label: tick.label,
       isElim: tick.isElim,
-      rankings: standings.map((s,rank)=>({...s,pos:rank+1}))
+      rankings: i === 0
+        ? standings.map(s=>({...s,pos:PLAYERS.length}))
+        : standings.map((s,rank)=>({...s,pos:rank+1}))
     };
   });
 
@@ -1458,8 +1461,21 @@ function buildMatchDateMap() {
   return map;
 }
 
-// Generate 3-day tick points covering all matches that have results
-// Returns [{date, label, isElim}]
+// Determina a qué fase pertenece cada día del torneo, según las fechas reales de los partidos
+function getPhaseBoundaries() {
+  const matchDates = buildMatchDateMap();
+  return TREND_PHASES.map(ph => {
+    const dates = ph.ids.map(id => matchDates[id]?.date).filter(Boolean);
+    if(dates.length === 0) return null;
+    const startDate = new Date(Math.min(...dates.map(d=>d.getTime())));
+    startDate.setHours(0,0,0,0);
+    return {label: ph.label, startDate, isElim: ph.type === 'elim'};
+  }).filter(Boolean);
+}
+
+// Genera un punto por cada día del torneo (día a día) hasta el último resultado cargado.
+// El label solo se asigna en el primer día de cada fase (J1 Grupos, J2 Grupos, J3 Grupos, Ronda 32, etc.)
+// así el eje X sigue mostrando esos nombres de fase en vez de fechas sueltas.
 function buildTimeline(fdgResults, elimResults) {
   const matchDates = buildMatchDateMap();
   // Find all matches with results
@@ -1471,29 +1487,25 @@ function buildTimeline(fdgResults, elimResults) {
   });
   if(playedDates.length === 0) return [];
 
+  const phases = getPhaseBoundaries();
   const start = new Date(2026,5,11); // June 11 = tournament start
+  start.setHours(0,0,0,0);
   const lastPlayed = new Date(Math.max(...playedDates.map(d=>d.getTime())));
-  // Round lastPlayed up to midnight of next day
   const end = new Date(lastPlayed);
-  end.setHours(23,59,0,0);
+  end.setHours(0,0,0,0);
 
-  // Generate ticks every 3 days from start to end
+  // Generate one tick per day from start to end
   const ticks = [];
   const cur = new Date(start);
+  let lastLabel = null;
   while(cur <= end) {
     const d = new Date(cur);
-    const day = d.getDate();
-    const mon = d.toLocaleString('es',{month:'short'});
-    // Is this date in elim territory? (after June 27)
-    const isElim = d >= new Date(2026,5,28);
-    ticks.push({date: d, label: `${day}-${mon}`, isElim});
-    cur.setDate(cur.getDate()+3);
-  }
-  // Always include last played date if not already there
-  const lastTick = ticks[ticks.length-1];
-  if(lastTick && Math.abs(lastTick.date - lastPlayed) > 1000*60*60*24) {
-    const isElim = lastPlayed >= new Date(2026,5,28);
-    ticks.push({date: lastPlayed, label: `${lastPlayed.getDate()}-${lastPlayed.toLocaleString('es',{month:'short'})}`, isElim});
+    let curPhase = phases[0] || null;
+    for(const ph of phases) { if(ph.startDate <= d) curPhase = ph; else break; }
+    const isNewPhase = curPhase && curPhase.label !== lastLabel;
+    if(isNewPhase) lastLabel = curPhase.label;
+    ticks.push({date: d, label: isNewPhase ? curPhase.label : null, isElim: curPhase ? curPhase.isElim : false});
+    cur.setDate(cur.getDate() + 1);
   }
   return ticks;
 }
@@ -1589,26 +1601,6 @@ function calcRaceTrend(fdgPreds, fdgResults, elimPreds, elimResults) {
   });
 }
 
-// Convierte una lista de puntos [x,y] en un path SVG suavizado (Catmull-Rom → Bézier)
-function smoothPath(pts) {
-  if(pts.length < 3) {
-    return pts.map(([x,y],i) => (i===0?`M${x},${y}`:`L${x},${y}`)).join(' ');
-  }
-  let d = `M${pts[0][0]},${pts[0][1]}`;
-  for(let i = 0; i < pts.length - 1; i++) {
-    const p0 = pts[i === 0 ? 0 : i - 1];
-    const p1 = pts[i];
-    const p2 = pts[i + 1];
-    const p3 = pts[i + 2 < pts.length ? i + 2 : i + 1];
-    const c1x = p1[0] + (p2[0] - p0[0]) / 6;
-    const c1y = p1[1] + (p2[1] - p0[1]) / 6;
-    const c2x = p2[0] - (p3[0] - p1[0]) / 6;
-    const c2y = p2[1] - (p3[1] - p1[1]) / 6;
-    d += ` C${c1x},${c1y} ${c2x},${c2y} ${p2[0]},${p2[1]}`;
-  }
-  return d;
-}
-
 function TrendChart({ allPlayerData, size }) {
   // allPlayerData: [{player, color, dateTrend:[{label,cum,isElim}]}]
   const e = React.createElement;
@@ -1638,10 +1630,9 @@ function TrendChart({ allPlayerData, size }) {
     );
   }
 
-  // X axis date labels — skip some if crowded
-  const step = n > 12 ? 2 : 1;
+  // X axis labels — solo en el primer día de cada fase (J1 Grupos, J2 Grupos, J3 Grupos, Ronda 32, etc.)
   const xLabels = ticks.map((t,i) => {
-    if(i % step !== 0 && i !== n-1) return null;
+    if(!t.label) return null;
     return e('text',{key:'xl'+i, x:xScale(i), y:H-PAD.bottom+12,
       textAnchor:'middle', fontSize:7.5,
       fill: t.isElim ? '#F59E0B' : '#64748b',
@@ -1658,19 +1649,15 @@ function TrendChart({ allPlayerData, size }) {
     e('text',{key:'se', x:sepX+3, y:PAD.top-8, fontSize:7, fill:'#F59E0B'},'ELIM.'),
   ] : [];
 
-  // Player lines — curva suave, con un punto visible en cada marca de 3 días
+  // Player lines — línea recta, un punto por día
   const playerElems = allPlayerData.flatMap(({player, color, dateTrend}) => {
     if(!dateTrend || dateTrend.length === 0) return [];
     const pts = dateTrend.map((t,i) => [xScale(i), yScale(t.cum)]);
-    const d = smoothPath(pts);
+    const d = pts.map(([x,y],i) => (i===0?`M${x},${y}`:`L${x},${y}`)).join(' ');
     const [lx,ly] = pts[pts.length-1];
     const lastCum = dateTrend[dateTrend.length-1].cum;
     return [
       e('path',{key:'l'+player, d, fill:'none', stroke:color, strokeWidth:2, strokeLinejoin:'round', strokeLinecap:'round'}),
-      // Puntos pequeños en cada tick intermedio, para que se note el avance cada 3 días
-      ...pts.slice(0,-1).map(([x,y],i) =>
-        e('circle',{key:'pt'+player+i, cx:x, cy:y, r:2.5, fill:color, stroke:'#fff', strokeWidth:1})
-      ),
       e('circle',{key:'dot'+player, cx:lx, cy:ly, r:4, fill:'#fff', stroke:color, strokeWidth:2}),
       e('text',{key:'lbl'+player, x:lx+5, y:ly, fontSize:8, fill:color, fontWeight:'bold', dominantBaseline:'middle'}, lastCum+''),
     ];
@@ -1714,10 +1701,9 @@ function RaceChart({ raceData, size }) {
     ];
   }).flat();
 
-  // X axis date labels
-  const step = nTicks > 12 ? 2 : 1;
+  // X axis labels — solo en el primer día de cada fase (J1 Grupos, J2 Grupos, J3 Grupos, Ronda 32, etc.)
   const xLabels = raceData.map((t,i) => {
-    if(i % step !== 0 && i !== nTicks-1) return null;
+    if(!t.label) return null;
     return e('text',{key:'xl'+i, x:xScale(i), y:H-PAD.bottom+12,
       textAnchor:'middle', fontSize:7.5,
       fill: t.isElim?'#F59E0B':'#64748b',
@@ -1734,7 +1720,7 @@ function RaceChart({ raceData, size }) {
     e('text',{key:'se', x:sepX+3, y:PAD.top-10, fontSize:7, fill:'#F59E0B'},'ELIM.'),
   ] : [];
 
-  // One line per player — curva suave, con un punto visible en cada marca de 3 días
+  // One line per player — línea recta, un punto por día
   const playerLines = PLAYERS.flatMap(player => {
     const color = PC[player];
     const positions = raceData.map(tick => {
@@ -1742,14 +1728,11 @@ function RaceChart({ raceData, size }) {
       return r ? r.pos : nPlayers;
     });
     const pts = positions.map((pos,i) => [xScale(i), yScale(pos)]);
-    const d = smoothPath(pts);
+    const d = pts.map(([x,y],i) => (i===0?`M${x},${y}`:`L${x},${y}`)).join(' ');
     const [lx,ly] = pts[pts.length-1];
     const lastPos = positions[positions.length-1];
     return [
       e('path',{key:'l'+player, d, fill:'none', stroke:color, strokeWidth:2.5, strokeLinejoin:'round', strokeLinecap:'round'}),
-      ...pts.slice(0,-1).map(([x,y],i) =>
-        e('circle',{key:'pt'+player+i, cx:x, cy:y, r:2.5, fill:color, stroke:'#fff', strokeWidth:1})
-      ),
       e('circle',{key:'dot'+player, cx:lx, cy:ly, r:3.5, fill:'#fff', stroke:color, strokeWidth:2}),
       e('text',{key:'end'+player, x:lx+5, y:ly, fontSize:8, fill:color, fontWeight:'bold', dominantBaseline:'middle'},
         player+' '+lastPos+'°')
