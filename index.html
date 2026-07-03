@@ -1298,20 +1298,20 @@ function EstadisticasView({ fdg, elim, onNavigate, initPlayer }) {
     stats: calcPlayerCatStats(p, matches, preds, results, cats)
   });
 
-  const fdgData  = activePlayers.map(p => buildPlayerData(p, FDG,  fdg.preds,  fdg.results,  CATS_FDG_LABELS));
-  const elimData = activePlayers.map(p => buildPlayerData(p, ELIM, elim.preds, elim.results, CATS_ELIM_LABELS));
+  const fdgData  = React.useMemo(()=>activePlayers.map(p => buildPlayerData(p, FDG,  fdg.preds,  fdg.results,  CATS_FDG_LABELS)), [activePlayers.join(','), fdg.preds, fdg.results]);
+  const elimData = React.useMemo(()=>activePlayers.map(p => buildPlayerData(p, ELIM, elim.preds, elim.results, CATS_ELIM_LABELS)), [activePlayers.join(','), elim.preds, elim.results]);
   // Date-based data (3-day ticks) shared for both charts
   const {ticks: dateTicks, byPlayer: dateByPlayer} = React.useMemo(
     ()=>calcAllDateTrends(fdg.preds, fdg.results, elim.preds, elim.results),
     [fdg.results, elim.results]
   );
-  const trendData = activePlayers.map(p => ({
+  const trendData = React.useMemo(()=>activePlayers.map(p => ({
     player: p, color: PC[p],
     dateTrend: dateByPlayer[p] || []
-  }));
+  })), [activePlayers.join(','), dateByPlayer]);
   // Race: build from date ticks — rankings at each tick using ALL players.
   // El primer punto (día 0) arranca con todos en el 7° lugar, como línea de partida pareja.
-  const raceData = dateTicks.map((tick,i) => {
+  const raceData = React.useMemo(()=>dateTicks.map((tick,i) => {
     const standings = PLAYERS.map(p => ({
       player: p,
       cum: dateByPlayer[p]?.[i]?.cum || 0
@@ -1323,7 +1323,7 @@ function EstadisticasView({ fdg, elim, onNavigate, initPlayer }) {
         ? standings.map(s=>({...s,pos:PLAYERS.length}))
         : standings.map((s,rank)=>({...s,pos:rank+1}))
     };
-  });
+  }), [dateTicks, dateByPlayer]);
 
   const total = (data) => Object.values(data.stats).reduce((s,v)=>s+v.earned,0);
 
@@ -1855,19 +1855,41 @@ function App() {
   const [champ,setChamp]=useState({votes:{},real:null});
   const [sync,setSync]=useState(null);
   const [syncing,setSyncing]=useState(false);
+  const [initialLoaded,setInitialLoaded]=useState(false);
   const [confirmClear,setConfirmClear]=useState(false);
   const fdgRef=useRef(fdg); const elimRef=useRef(elim); const champRef=useRef(champ);
   useEffect(()=>{fdgRef.current=fdg;},[fdg]);
   useEffect(()=>{elimRef.current=elim;},[elim]);
   useEffect(()=>{champRef.current=champ;},[champ]);
 
+  // Combina lo recién obtenido con lo que ya teníamos, conservando la MISMA
+  // referencia de 'preds' o 'results' cuando no cambiaron. Así, todo lo que
+  // dependa de fdg.results / elim.results (como los gráficos de tendencia y
+  // carrera) solo se recalcula cuando el admin registra un resultado nuevo,
+  // y no cuando un jugador simplemente vota.
+  const stableMerge=(prev,next)=>{
+    if(!prev) return next;
+    const predsSig=JSON.stringify(prev.preds); const nextPredsSig=JSON.stringify(next.preds);
+    const resSig=JSON.stringify(prev.results); const nextResSig=JSON.stringify(next.results);
+    if(predsSig===nextPredsSig && resSig===nextResSig) return prev; // nada cambió
+    return {
+      preds: predsSig===nextPredsSig ? prev.preds : next.preds,
+      results: resSig===nextResSig ? prev.results : next.results
+    };
+  };
   const loadAll=useCallback(async()=>{
     const[f,e,c]=await Promise.all([lsGet(SK.fdg),lsGet(SK.elim),lsGet(SK.champs)]);
-    if(f)setFdg(f); if(e)setElim(e); if(c)setChamp(c);
+    if(f){ const m=stableMerge(fdgRef.current,f); if(m!==fdgRef.current) setFdg(m); }
+    if(e){ const m=stableMerge(elimRef.current,e); if(m!==elimRef.current) setElim(m); }
+    if(c){ const cSig=JSON.stringify(champRef.current); const nSig=JSON.stringify(c); if(cSig!==nSig) setChamp(c); }
     setSync({ts:Date.now(),label:new Date().toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit',second:'2-digit'})});
+    setInitialLoaded(true);
   },[]);
 
-  useEffect(()=>{loadAll();const t=setInterval(loadAll,20000);return()=>clearInterval(t);},[loadAll]);
+  // Polling más espaciado (60s) — solo para detectar resultados/predicciones de
+  // otros jugadores. Como loadAll ahora conserva referencias estables cuando
+  // no hay cambios reales, esto ya no provoca recálculos de gráficos innecesarios.
+  useEffect(()=>{loadAll();const t=setInterval(loadAll,60000);return()=>clearInterval(t);},[loadAll]);
 
   const handleSync=async()=>{setSyncing(true);await loadAll();setSyncing(false);};
   const onNavigate=(m)=>{
@@ -1929,6 +1951,17 @@ function App() {
   };
 
   if(!user)return React.createElement(React.Fragment,null,React.createElement('style',null,css),React.createElement(LoginScreen,{onLogin:login}));
+
+  if(!initialLoaded){
+    const e=React.createElement;
+    return e(React.Fragment,null,
+      e('style',null,css),
+      e('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',minHeight:'70vh',gap:12}},
+        e('div',{className:'sync-dot',style:{width:14,height:14,animation:'pulse 1s infinite'}}),
+        e('div',{style:{fontFamily:'Georgia,serif',fontWeight:700,color:'#0F1C3F',fontSize:15,textAlign:'center'}},'Cartola mundialera 2026 cargando... PÉRATE MIERDA')
+      )
+    );
+  }
 
   const tabs=[{id:'tabla',l:'🏆 Tabla'},{id:'grupos',l:'⚽ Grupos'},{id:'pos',l:'📈 Posiciones'},{id:'elim',l:'🏟️ Elim.'},{id:'camp',l:'🏆 Campeón'},{id:'reglas',l:'📋 Reglas'},{id:'estadisticas',l:'📊 Estadísticas'}];
   const e=React.createElement;
