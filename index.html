@@ -152,7 +152,7 @@ const GAS_URL = 'https://script.google.com/macros/s/AKfycbzQn3-xl0oZg3RW1UaQ0ZLK
 
 async function lsGet(k) {
   try {
-    const r = await fetch(`${GAS_URL}?action=get&key=${encodeURIComponent(k)}`);
+    const r = await fetch(`${GAS_URL}?action=get&key=${encodeURIComponent(k)}&_=${Date.now()}`, { cache: 'no-store' });
     const j = await r.json();
     return j.value ? JSON.parse(j.value) : null;
   } catch { return null; }
@@ -177,13 +177,15 @@ async function postToGAS(payload) {
   }
 }
 
-async function lsSet(k, d, retries = 3) {
+async function lsSet(k, d, retries = 4) {
   const target = JSON.stringify(d);
   for (let i = 0; i < retries; i++) {
     await postToGAS({ action: 'set', key: k, value: target });
-    await new Promise(res => setTimeout(res, 600 + i * 400));
+    await new Promise(res => setTimeout(res, 900 + i * 600));
     try {
-      const r = await fetch(`${GAS_URL}?action=get&key=${encodeURIComponent(k)}`);
+      // cache-busting: sin esto el navegador puede devolver una respuesta GET cacheada
+      // y hacer fallar la confirmación aunque el guardado sí haya funcionado.
+      const r = await fetch(`${GAS_URL}?action=get&key=${encodeURIComponent(k)}&_=${Date.now()}`, { cache: 'no-store' });
       const j = await r.json();
       if (j && j.value === target) return true; // confirmado: el servidor tiene exactamente esto
     } catch {}
