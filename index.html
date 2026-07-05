@@ -160,8 +160,7 @@ async function lsGet(k) {
 
 // postToGAS: usa mode:'no-cors' porque los POST a Apps Script Web Apps chocan con el
 // redirect 302 -> script.googleusercontent.com y el navegador los bloquea por CORS aunque
-// el servidor SÍ reciba y procese la escritura. Con no-cors no podemos leer la respuesta,
-// así que para 'set' confirmamos aparte con un GET (que sí funciona sin problemas).
+// el servidor SÍ reciba y procese la escritura.
 async function postToGAS(payload) {
   try {
     await fetch(GAS_URL, {
@@ -177,27 +176,21 @@ async function postToGAS(payload) {
   }
 }
 
-async function lsSet(k, d, retries = 4) {
-  const target = JSON.stringify(d);
-  for (let i = 0; i < retries; i++) {
-    await postToGAS({ action: 'set', key: k, value: target });
-    await new Promise(res => setTimeout(res, 900 + i * 600));
-    try {
-      // cache-busting: sin esto el navegador puede devolver una respuesta GET cacheada
-      // y hacer fallar la confirmación aunque el guardado sí haya funcionado.
-      const r = await fetch(`${GAS_URL}?action=get&key=${encodeURIComponent(k)}&_=${Date.now()}`, { cache: 'no-store' });
-      const j = await r.json();
-      if (j && j.value === target) return true; // confirmado: el servidor tiene exactamente esto
-    } catch {}
-    console.warn(`lsSet: intento ${i+1} no confirmado, reintentando...`);
-  }
-  console.error('⚠️ No se pudo confirmar el guardado tras varios intentos:', k);
-  try { alert('⚠️ Tu voto/resultado no se pudo confirmar por un problema de conexión. Volvé a intentarlo en unos segundos.'); } catch {}
-  return false;
+// patchGAS: guarda SOLO el campo que cambió. El servidor (Apps Script v9+) lo combina con
+// lo que ya existe usando un lock, así que no hay forma de que dos votos casi simultáneos
+// se pisen entre sí. No hace falta confirmar releyendo — el merge es aditivo, no un reemplazo.
+function patchGAS(key, id, field, value, player) {
+  postToGAS({ action: 'patch', key, id, field, value, player: player || null });
+}
+
+// lsSet queda para los pocos casos que sí guardan el objeto completo (sorteo de
+// b3slots, ganador del mundial, reset general). Fire-and-forget: rápido, sin espera.
+async function lsSet(k, d) {
+  return postToGAS({ action: 'set', key: k, value: JSON.stringify(d) });
 }
 
 // Registro de auditoría — no se confirma con GET porque no es crítico si se pierde
-// ocasionalmente una fila de log (el dato real ya está garantizado por lsSet arriba).
+// ocasionalmente una fila de log (el dato real ya está garantizado por patchGAS arriba).
 function logVote(matchId, player, tipo, campo, valorAnterior, valorNuevo) {
   postToGAS({ action:'log', kind:'voto', matchId, tipo, campo, player,
     valorAnterior: valorAnterior ?? null, valorNuevo: valorNuevo ?? null });
@@ -1947,20 +1940,20 @@ function App() {
   // vote(id, k, v, type) — single field
   // vote(id, [[k1,v1],[k2,v2],...], null, type) — batch fields atomically
   const vote=useCallback((id,kOrPairs,v,type='fdg')=>{
-    const [setD,ref,KEY]=type==='fdg'?[setFdg,fdgRef,SK.fdg]:[setElim,elimRef,SK.elim];
+    const [setD,,KEY]=type==='fdg'?[setFdg,fdgRef,SK.fdg]:[setElim,elimRef,SK.elim];
     const pairs = Array.isArray(kOrPairs) ? kOrPairs : [[kOrPairs,v]];
     setD(prev=>{
       const userPrev = prev.preds[id]?.[user] || {};
       const userNext = {...userPrev};
       pairs.forEach(([k,val])=>{
-        if(userPrev[k]!==val) logVote(id, user, type, k, userPrev[k]??null, val);
+        if(userPrev[k]!==val){
+          logVote(id, user, type, k, userPrev[k]??null, val);
+          patchGAS(KEY, id, k, val, user); // guarda solo este campo — sin carreras
+        }
         userNext[k]=val;
       });
       const newPreds = {...prev.preds,[id]:{...prev.preds[id],[user]:userNext}};
-      const next = {preds:newPreds, results:prev.results};
-      // lsSet uses the freshly computed state, not stale ref
-      lsSet(KEY,{preds:newPreds, results:ref.current.results});
-      return next;
+      return {preds:newPreds, results:prev.results};
     });
   },[user]);
 
@@ -1976,13 +1969,14 @@ const result=useCallback((id,kOrPairs,v,type='fdg')=>{
     const matchPrev = prev.results[id] || {};
     const matchNext = {...matchPrev};
     pairs.forEach(([k,val])=>{
-      if(matchPrev[k]!==val) logCorrection(id, '(resultado real)', type, k, matchPrev[k]??null, val, user);
+      if(matchPrev[k]!==val){
+        logCorrection(id, '(resultado real)', type, k, matchPrev[k]??null, val, user);
+        patchGAS(KEY, id, k, val, null); // guarda solo este campo — sin carreras
+      }
       matchNext[k]=val;
     });
     const newResults = {...prev.results,[id]:matchNext};
-    const next = {preds:prev.preds, results:newResults};
-    lsSet(KEY,{preds:ref.current.preds, results:newResults});
-    return next;
+    return {preds:prev.preds, results:newResults};
   });
 },[user]);
 
