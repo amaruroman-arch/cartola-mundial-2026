@@ -178,7 +178,7 @@ async function postToGAS(payload) {
 
 // patchGAS: guarda SOLO el campo que cambió. El servidor (Apps Script v9+) lo combina con
 // lo que ya existe usando un lock, así que no hay forma de que dos votos casi simultáneos
-// se pisen entre sí. No hace falta confirmar releyendo — el merge es aditivo, no un reemplazo.
+// (mismo usuario votando rápido, o dos jugadores distintos) se pisen entre sí.
 function patchGAS(key, id, field, value, player) {
   postToGAS({ action: 'patch', key, id, field, value, player: player || null });
 }
@@ -189,8 +189,9 @@ async function lsSet(k, d) {
   return postToGAS({ action: 'set', key: k, value: JSON.stringify(d) });
 }
 
-// Registro de auditoría — no se confirma con GET porque no es crítico si se pierde
-// ocasionalmente una fila de log (el dato real ya está garantizado por patchGAS arriba).
+// Registro de horas — server-side (Google Apps Script pone la hora oficial,
+// no la del reloj del dispositivo). "Fire and forget": no bloquea la UI ni
+// afecta el guardado normal si falla.
 function logVote(matchId, player, tipo, campo, valorAnterior, valorNuevo) {
   postToGAS({ action:'log', kind:'voto', matchId, tipo, campo, player,
     valorAnterior: valorAnterior ?? null, valorNuevo: valorNuevo ?? null });
@@ -438,8 +439,10 @@ function SyncBtn({ sync, syncing, onClick }) {
   );
 }
 
-function MatchCard({ m, isAdmin, user, allPreds, result, onVote, onResult, isElim, fRes, eRes, bcCode, b3assigned }) {
+function MatchCard({ m, isAdmin, user, allPreds, result, onVote, onResult, onAdminCorrect, isElim, fRes, eRes, bcCode, b3assigned }) {
   const [open, setOpen] = React.useState(false);
+  const [corrOpen, setCorrOpen] = React.useState(false);
+  const [corrPlayer, setCorrPlayer] = React.useState(null);
   const pred = allPreds?.[m[0]]?.[user] || {};
   const res = result || {};
   // Bloqueo: (1) admin siempre puede editar, (2) resultado ingresado, (3) partido ya empezó
@@ -456,6 +459,15 @@ function MatchCard({ m, isAdmin, user, allPreds, result, onVote, onResult, isEli
   const voters = PLAYERS.filter(p=>p!==user&&allPreds?.[m[0]]?.[p]&&Object.values(allPreds[m[0]][p]).some(v=>v));
   const optLbl = v=>v==='SG'?'Sin goles':v==='ST'?'Sin tarjetas':v==='L'?'Local':v==='E'?'Empate':v==='S'?'Sí':v==='N'?'No':'Visita';
   const cats = isElim ? CATS_ELIM : CATS;
+  const corrPred = corrPlayer ? (allPreds?.[m[0]]?.[corrPlayer] || {}) : {};
+  const handleCorrVote = (k,v) => {
+    if(!corrPlayer) return;
+    if(!isElim) { onAdminCorrect(m[0],corrPlayer,k,v); return; }
+    const pairs = [[k,v]];
+    if(k==='ala'&&v==='N') pairs.push(['pen','N']);
+    if(k==='pen'&&v==='S') pairs.push(['ala','S']);
+    onAdminCorrect(m[0],corrPlayer,pairs,null);
+  };
 
   const handleVote = (id,k,v) => {
     if(!isElim) { onVote(id,k,v); return; }
@@ -643,6 +655,51 @@ function MatchCard({ m, isAdmin, user, allPreds, result, onVote, onResult, isEli
           e('span',{className:'adm-l'},'Tarj. L / V'),
           e('input',{className:'ai',style:{width:50},placeholder:'L',value:res.cl||'',onChange:ev=>onResult(m[0],'cl',ev.target.value)}),
           e('input',{className:'ai',style:{width:50},placeholder:'V',value:res.cv||'',onChange:ev=>onResult(m[0],'cv',ev.target.value)})
+        ),
+        e('div',{style:{marginTop:10,paddingTop:10,borderTop:'2px dashed #F59E0B'}},
+          e('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:6}},
+            e('span',{className:'adm-l',style:{color:'#F59E0B',fontWeight:700}},'🔓 Reactivar / corregir voto de jugador'),
+            e('button',{className:'ab',onClick:()=>{setCorrOpen(o=>!o);if(corrOpen)setCorrPlayer(null);}},corrOpen?'Cerrar':'Abrir')
+          ),
+          corrOpen&&e('div',{style:{marginTop:8}},
+            e('div',{style:{fontSize:10,color:'#64748b',marginBottom:6,lineHeight:1.4}},
+              'Usar cuando un jugador votó y no quedó registrado, o para corregir un error puntual. Queda guardado aparte en "Correcciones admin" con la hora oficial del servidor.'),
+            e('div',{style:{display:'flex',gap:3,flexWrap:'wrap',marginBottom:8}},
+              PLAYERS.map(p=>e('button',{key:p,className:`ab${corrPlayer===p?' on':''}`,
+                style:corrPlayer===p?{background:PC[p],borderColor:PC[p],color:'#fff'}:{},
+                onClick:()=>setCorrPlayer(p)},p))
+            ),
+            corrPlayer&&e('div',null,
+              cats.map(cat=>
+                e('div',{key:'corr'+cat.k,className:'adm-r'},
+                  e('span',{className:'adm-l'},cat.l),
+                  e('div',{style:{display:'flex',gap:3,flexWrap:'wrap'}},
+                    cat.o.map(([v,lb])=>e('button',{key:v,className:`ab${corrPred[cat.k]===v?' on':''}`,onClick:()=>handleCorrVote(cat.k,corrPred[cat.k]===v?null:v)},lb))
+                  )
+                )
+              ),
+              e('div',{className:'adm-r'},
+                e('span',{className:'adm-l'},'PARCIAL 1T'),
+                e('input',{className:'ai',style:{width:72,textAlign:'center'},placeholder:'2-1',value:corrPred.par||'',onChange:ev=>handleCorrVote('par',ev.target.value)})
+              ),
+              isElim&&e('div',{className:'adm-r'},
+                e('span',{className:'adm-l'},"RESULT. 90'"),
+                e('input',{className:'ai',style:{width:72,textAlign:'center'},placeholder:'1-1',value:corrPred.res90||'',onChange:ev=>handleCorrVote('res90',ev.target.value)})
+              ),
+              e('div',{className:'adm-r'},
+                e('span',{className:'adm-l'},isElim?'RESULT. FINAL':'FINAL'),
+                e('input',{className:'ai',style:{width:72,textAlign:'center'},placeholder:'2-1',value:corrPred.fin||'',onChange:ev=>handleCorrVote('fin',ev.target.value)})
+              ),
+              isElim&&e('div',{className:'adm-r'},
+                e('span',{className:'adm-l'},'¿ALARGUE?'),
+                e('div',{style:{display:'flex',gap:3}},[['S','Sí'],['N','No']].map(([v,lb])=>e('button',{key:v,className:`ab${corrPred.ala===v?' on':''}`,onClick:()=>handleCorrVote('ala',corrPred.ala===v?null:v)},lb)))
+              ),
+              isElim&&e('div',{className:'adm-r'},
+                e('span',{className:'adm-l'},'¿PENALES?'),
+                e('div',{style:{display:'flex',gap:3}},[['S','Sí'],['N','No']].map(([v,lb])=>e('button',{key:v,className:`ab${corrPred.pen===v?' on':''}`,onClick:()=>handleCorrVote('pen',corrPred.pen===v?null:v)},lb)))
+              )
+            )
+          )
         )
       )
     )
@@ -890,14 +947,14 @@ function Tabla({ fdg, elim, champ, onNavigate }) {
   );
 }
 
-function GruposView({ user, isAdmin, fdg, onVote, onResult }) {
+function GruposView({ user, isAdmin, fdg, onVote, onResult, onAdminCorrect }) {
   const [grp,setGrp]=React.useState('ALL');
   const ms=grp==='ALL'?FDG:FDG.filter(m=>m[1]===grp);
   const e=React.createElement;
   return e('div',{className:'view'},
     e('div',{className:'sec'},'⚽ Fase de grupos'),
     e('div',{className:'filt'},e('button',{className:`fb${grp==='ALL'?' on':''}`,onClick:()=>setGrp('ALL')},'Todos'),...GK.map(g=>e('button',{key:g,className:`fb${grp===g?' on':''}`,onClick:()=>setGrp(g)},'Gr.'+g))),
-    ...ms.map(m=>e(MatchCard,{key:m[0],m,isAdmin,user,allPreds:fdg.preds,result:fdg.results?.[m[0]],onVote,onResult,bcCode:BC[String(m[0])]}))
+    ...ms.map(m=>e(MatchCard,{key:m[0],m,isAdmin,user,allPreds:fdg.preds,result:fdg.results?.[m[0]],onVote,onResult,onAdminCorrect:(id,player,k,v)=>onAdminCorrect(id,player,k,v,'fdg'),bcCode:BC[String(m[0])]}))
   );
 }
 
@@ -1149,7 +1206,7 @@ function FixtureBracket({ elim, fdg }) {
   );
 }
 
-function EliminatoriasView({ user, isAdmin, elim, fdg, onVote, onResult, initTab, initRnd }) {
+function EliminatoriasView({ user, isAdmin, elim, fdg, onVote, onResult, onAdminCorrect, initTab, initRnd }) {
   const [tab, setTab] = React.useState(initTab||'fixture');
   const [rnd,setRnd]=React.useState(initRnd||'R32');
   React.useEffect(()=>{ if(initTab) setTab(initTab); },[initTab]);
@@ -1165,7 +1222,7 @@ function EliminatoriasView({ user, isAdmin, elim, fdg, onVote, onResult, initTab
     ),
     tab==='fixture' && e(FixtureBracket,{elim,fdg}),
     tab==='partidos' && e('div',null,
-      ...ELIM.filter(m=>m[1]===rnd).map(m=>e(MatchCard,{key:m[0],m,isAdmin,user,allPreds:elim.preds,result:elim.results?.[m[0]],onVote:(id,k,v)=>onVote(id,k,v,'elim'),onResult:(id,k,v)=>onResult(id,k,v,'elim'),isElim:true,fRes:fdg.results,eRes:elim.results,bcCode:BCE[m[1]]||'DC',b3assigned}))
+      ...ELIM.filter(m=>m[1]===rnd).map(m=>e(MatchCard,{key:m[0],m,isAdmin,user,allPreds:elim.preds,result:elim.results?.[m[0]],onVote:(id,k,v)=>onVote(id,k,v,'elim'),onResult:(id,k,v)=>onResult(id,k,v,'elim'),onAdminCorrect:(id,player,k,v)=>onAdminCorrect(id,player,k,v,'elim'),isElim:true,fRes:fdg.results,eRes:elim.results,bcCode:BCE[m[1]]||'DC',b3assigned}))
     )
   );
 }
@@ -1957,28 +2014,48 @@ function App() {
     });
   },[user]);
 
-  // result(id, kOrPairs, v, type) — single or batch field updates for results
-const result=useCallback((id,kOrPairs,v,type='fdg')=>{
-  const [setD,ref,KEY]=type==='fdg'?[setFdg,fdgRef,SK.fdg]:[setElim,elimRef,SK.elim];
-  if(id==='__b3slots__') {
-    setD(prev=>{const next={preds:prev.preds,results:v};lsSet(KEY,{preds:ref.current.preds,results:v});return next;});
-    return;
-  }
-  const pairs = Array.isArray(kOrPairs) ? kOrPairs : [[kOrPairs,v]];
-  setD(prev=>{
-    const matchPrev = prev.results[id] || {};
-    const matchNext = {...matchPrev};
-    pairs.forEach(([k,val])=>{
-      if(matchPrev[k]!==val){
-        logCorrection(id, '(resultado real)', type, k, matchPrev[k]??null, val, user);
-        patchGAS(KEY, id, k, val, null); // guarda solo este campo — sin carreras
-      }
-      matchNext[k]=val;
+  // adminCorrect(id, player, k, v, type) — el admin vota EN NOMBRE de un jugador
+  // (reactivación de una votación pasada que no llegó a registrarse, o corrección
+  // de un error). Queda registrado en la hoja "Correcciones admin", separado del
+  // registro normal de votos.
+  const adminCorrect=useCallback((id,player,kOrPairs,v,type='fdg')=>{
+    const [setD,,KEY]=type==='fdg'?[setFdg,fdgRef,SK.fdg]:[setElim,elimRef,SK.elim];
+    const pairs = Array.isArray(kOrPairs) ? kOrPairs : [[kOrPairs,v]];
+    setD(prev=>{
+      const playerPrev = prev.preds[id]?.[player] || {};
+      const playerNext = {...playerPrev};
+      pairs.forEach(([k,val])=>{
+        logCorrection(id, player, type, k, playerPrev[k]??null, val, user);
+        patchGAS(KEY, id, k, val, player); // guarda solo este campo — sin carreras
+        playerNext[k]=val;
+      });
+      const newPreds = {...prev.preds,[id]:{...prev.preds[id],[player]:playerNext}};
+      return {preds:newPreds, results:prev.results};
     });
-    const newResults = {...prev.results,[id]:matchNext};
-    return {preds:prev.preds, results:newResults};
-  });
-},[user]);
+  },[user]);
+
+  // result(id, kOrPairs, v, type) — single or batch field updates for results
+  const result=useCallback((id,kOrPairs,v,type='fdg')=>{
+    const [setD,ref,KEY]=type==='fdg'?[setFdg,fdgRef,SK.fdg]:[setElim,elimRef,SK.elim];
+    if(id==='__b3slots__') {
+      setD(prev=>{const next={preds:prev.preds,results:v};lsSet(KEY,{preds:ref.current.preds,results:v});return next;});
+      return;
+    }
+    const pairs = Array.isArray(kOrPairs) ? kOrPairs : [[kOrPairs,v]];
+    setD(prev=>{
+      const matchPrev = prev.results[id] || {};
+      const matchNext = {...matchPrev};
+      pairs.forEach(([k,val])=>{
+        if(matchPrev[k]!==val){
+          logCorrection(id, '(resultado real)', type, k, matchPrev[k]??null, val, user);
+          patchGAS(KEY, id, k, val, null); // guarda solo este campo — sin carreras
+        }
+        matchNext[k]=val;
+      });
+      const newResults = {...prev.results,[id]:matchNext};
+      return {preds:prev.preds, results:newResults};
+    });
+  },[user]);
 
   const cVote=useCallback(t=>{setChamp(p=>{const n={...p,votes:{...p.votes,[user]:t}};lsSet(SK.champs,{...champRef.current,votes:{...champRef.current.votes,[user]:t}});return n;});},[user]);
   const cReal=useCallback(t=>{setChamp(p=>{const n={...p,real:t};lsSet(SK.champs,{...champRef.current,real:t});return n;});},[]);
@@ -2027,9 +2104,9 @@ const result=useCallback((id,kOrPairs,v,type='fdg')=>{
     ),
     e('div',{className:'nav'},...tabs.map(t=>e('button',{key:t.id,className:`ntab${tab===t.id?' on':''}`,onClick:()=>setTab(t.id)},t.l))),
     tab==='tabla'&&e(Tabla,{fdg,elim,champ,onNavigate}),
-    tab==='grupos'&&e(GruposView,{user,isAdmin,fdg,onVote:vote,onResult:result}),
+    tab==='grupos'&&e(GruposView,{user,isAdmin,fdg,onVote:vote,onResult:result,onAdminCorrect:adminCorrect}),
     tab==='pos'&&e(PosicionesView,{fdg}),
-    tab==='elim'&&e(EliminatoriasView,{user,isAdmin,elim,fdg,onVote:vote,onResult:result,initTab:elimTab,initRnd:elimRnd}),
+    tab==='elim'&&e(EliminatoriasView,{user,isAdmin,elim,fdg,onVote:vote,onResult:result,onAdminCorrect:adminCorrect,initTab:elimTab,initRnd:elimRnd}),
     tab==='camp'&&e(CampeonView,{user,isAdmin,champ,onVote:cVote,onReal:cReal}),
     tab==='reglas'&&e(ReglasView,null),
     tab==='estadisticas'&&e(EstadisticasView,{fdg,elim,onNavigate,initPlayer:statsPlayer})
