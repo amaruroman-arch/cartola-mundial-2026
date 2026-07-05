@@ -87,7 +87,9 @@ const { useState, useEffect, useCallback, useRef } = React;
 const PLAYERS = ['AMARU','RATA','CARRIL','ALFARO','PANTERA','VELIZ','SOTO'];
 const PC = {AMARU:'#1565C0',RATA:'#B71C1C',CARRIL:'#1B5E20',ALFARO:'#E65100',PANTERA:'#6A1B9A',VELIZ:'#00695C',SOTO:'#795548'};
 const ADMIN_CODE = 'noria2026';
-const SK = { fdg:'cn_fdg_v6', elim:'cn_elim_v6', champs:'cn_champs_v6' };
+// fdg/elim ya no usan una clave única (ver fix del límite de 9 KB en Apps Script);
+// champs sigue siendo un objeto chico (7 votos + 1 campeón real), sin ese problema.
+const SK = { champs:'cn_champs_v6' };
 
 const ELIM_META = {
   // R32 — datos confirmados
@@ -158,6 +160,17 @@ async function lsGet(k) {
   } catch { return null; }
 }
 
+// lsGetAll: trae TODO el estado de una fase ('fdg'|'elim'), reconstruido en el servidor
+// a partir de sus propiedades chicas por partido (ver nota en Apps Script sobre el
+// límite de 9 KB por propiedad — este endpoint reemplaza al viejo lsGet(SK.fdg/elim)).
+async function lsGetAll(type) {
+  try {
+    const r = await fetch(`${GAS_URL}?action=getAll&type=${type}&_=${Date.now()}`, { cache: 'no-store' });
+    const j = await r.json();
+    return j.value ? JSON.parse(j.value) : null;
+  } catch { return null; }
+}
+
 // postToGAS: usa mode:'no-cors' porque los POST a Apps Script Web Apps chocan con el
 // redirect 302 -> script.googleusercontent.com y el navegador los bloquea por CORS aunque
 // el servidor SÍ reciba y procese la escritura.
@@ -176,11 +189,12 @@ async function postToGAS(payload) {
   }
 }
 
-// patchGAS: guarda SOLO el campo que cambió. El servidor (Apps Script v9+) lo combina con
-// lo que ya existe usando un lock, así que no hay forma de que dos votos casi simultáneos
-// (mismo usuario votando rápido, o dos jugadores distintos) se pisen entre sí.
-function patchGAS(key, id, field, value, player) {
-  postToGAS({ action: 'patch', key, id, field, value, player: player || null });
+// patchGAS: guarda SOLO el campo que cambió, en la propiedad chica de ESE partido
+// ('type'+'id' → una propiedad propia en el servidor, ver Apps Script). El servidor
+// usa un lock, así que no hay forma de que dos votos casi simultáneos (mismo usuario
+// votando rápido, o dos jugadores distintos) se pisen entre sí.
+function patchGAS(type, id, field, value, player) {
+  postToGAS({ action: 'patch', type, id, field, value, player: player || null });
 }
 
 // lsSet queda para los pocos casos que sí guardan el objeto completo (sorteo de
@@ -1968,7 +1982,7 @@ function App() {
     };
   };
   const loadAll=useCallback(async()=>{
-    const[f,e,c]=await Promise.all([lsGet(SK.fdg),lsGet(SK.elim),lsGet(SK.champs)]);
+    const[f,e,c]=await Promise.all([lsGetAll('fdg'),lsGetAll('elim'),lsGet(SK.champs)]);
     if(f){ const m=stableMerge(fdgRef.current,f); if(m!==fdgRef.current) setFdg(m); }
     if(e){ const m=stableMerge(elimRef.current,e); if(m!==elimRef.current) setElim(m); }
     if(c){ const cSig=JSON.stringify(champRef.current); const nSig=JSON.stringify(c); if(cSig!==nSig) setChamp(c); }
@@ -1997,7 +2011,7 @@ function App() {
   // vote(id, k, v, type) — single field
   // vote(id, [[k1,v1],[k2,v2],...], null, type) — batch fields atomically
   const vote=useCallback((id,kOrPairs,v,type='fdg')=>{
-    const [setD,,KEY]=type==='fdg'?[setFdg,fdgRef,SK.fdg]:[setElim,elimRef,SK.elim];
+    const setD=type==='fdg'?setFdg:setElim;
     const pairs = Array.isArray(kOrPairs) ? kOrPairs : [[kOrPairs,v]];
     setD(prev=>{
       const userPrev = prev.preds[id]?.[user] || {};
@@ -2005,7 +2019,7 @@ function App() {
       pairs.forEach(([k,val])=>{
         if(userPrev[k]!==val){
           logVote(id, user, type, k, userPrev[k]??null, val);
-          patchGAS(KEY, id, k, val, user); // guarda solo este campo — sin carreras
+          patchGAS(type, id, k, val, user); // guarda solo este campo, en la propiedad de este partido
         }
         userNext[k]=val;
       });
@@ -2019,14 +2033,14 @@ function App() {
   // de un error). Queda registrado en la hoja "Correcciones admin", separado del
   // registro normal de votos.
   const adminCorrect=useCallback((id,player,kOrPairs,v,type='fdg')=>{
-    const [setD,,KEY]=type==='fdg'?[setFdg,fdgRef,SK.fdg]:[setElim,elimRef,SK.elim];
+    const setD=type==='fdg'?setFdg:setElim;
     const pairs = Array.isArray(kOrPairs) ? kOrPairs : [[kOrPairs,v]];
     setD(prev=>{
       const playerPrev = prev.preds[id]?.[player] || {};
       const playerNext = {...playerPrev};
       pairs.forEach(([k,val])=>{
         logCorrection(id, player, type, k, playerPrev[k]??null, val, user);
-        patchGAS(KEY, id, k, val, player); // guarda solo este campo — sin carreras
+        patchGAS(type, id, k, val, player); // guarda solo este campo, en la propiedad de este partido
         playerNext[k]=val;
       });
       const newPreds = {...prev.preds,[id]:{...prev.preds[id],[player]:playerNext}};
@@ -2036,9 +2050,11 @@ function App() {
 
   // result(id, kOrPairs, v, type) — single or batch field updates for results
   const result=useCallback((id,kOrPairs,v,type='fdg')=>{
-    const [setD,ref,KEY]=type==='fdg'?[setFdg,fdgRef,SK.fdg]:[setElim,elimRef,SK.elim];
+    const setD=type==='fdg'?setFdg:setElim;
     if(id==='__b3slots__') {
-      setD(prev=>{const next={preds:prev.preds,results:v};lsSet(KEY,{preds:ref.current.preds,results:v});return next;});
+      // Sorteo de mejores terceros: objeto chico y propio en el servidor (SLOTS_elim),
+      // nunca se mezcla con el resto de los votos.
+      setD(prev=>{const next={preds:prev.preds,results:{...prev.results,__b3slots__:v}};postToGAS({action:'setSlots',value:v});return next;});
       return;
     }
     const pairs = Array.isArray(kOrPairs) ? kOrPairs : [[kOrPairs,v]];
@@ -2048,7 +2064,7 @@ function App() {
       pairs.forEach(([k,val])=>{
         if(matchPrev[k]!==val){
           logCorrection(id, '(resultado real)', type, k, matchPrev[k]??null, val, user);
-          patchGAS(KEY, id, k, val, null); // guarda solo este campo — sin carreras
+          patchGAS(type, id, k, val, null); // guarda solo este campo, en la propiedad de este partido
         }
         matchNext[k]=val;
       });
@@ -2061,10 +2077,17 @@ function App() {
   const cReal=useCallback(t=>{setChamp(p=>{const n={...p,real:t};lsSet(SK.champs,{...champRef.current,real:t});return n;});},[]);
 
   const clearAll=async()=>{
-    const nF={preds:{},results:fdgRef.current.results};
-    const nE={preds:{},results:elimRef.current.results};
+    // Borra solo las predicciones (conserva resultados reales) en cada propiedad
+    // chica por partido — nunca escribe un blob gigante de una sola vez.
     const nC={votes:{},real:champRef.current.real};
-    setFdg(nF);setElim(nE);setChamp(nC);await Promise.all([lsSet(SK.fdg,nF),lsSet(SK.elim,nE),lsSet(SK.champs,nC)]);setConfirmClear(false);
+    await Promise.all([
+      postToGAS({action:'clearPreds',type:'fdg'}),
+      postToGAS({action:'clearPreds',type:'elim'}),
+      lsSet(SK.champs,nC)
+    ]);
+    setChamp(nC);
+    await loadAll();
+    setConfirmClear(false);
   };
 
   if(!user)return React.createElement(React.Fragment,null,React.createElement('style',null,css),React.createElement(LoginScreen,{onLogin:login}));
