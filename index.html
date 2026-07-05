@@ -157,14 +157,52 @@ async function lsGet(k) {
     return j.value ? JSON.parse(j.value) : null;
   } catch { return null; }
 }
-async function lsSet(k, d) {
+
+// postToGAS: usa mode:'no-cors' porque los POST a Apps Script Web Apps chocan con el
+// redirect 302 -> script.googleusercontent.com y el navegador los bloquea por CORS aunque
+// el servidor SÍ reciba y procese la escritura. Con no-cors no podemos leer la respuesta,
+// así que para 'set' confirmamos aparte con un GET (que sí funciona sin problemas).
+async function postToGAS(payload) {
   try {
     await fetch(GAS_URL, {
       method: 'POST',
+      mode: 'no-cors',
       headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'set', key: k, value: JSON.stringify(d) })
+      body: JSON.stringify(payload)
     });
-  } catch {}
+    return true;
+  } catch (e) {
+    console.warn('postToGAS falló:', e);
+    return false;
+  }
+}
+
+async function lsSet(k, d, retries = 3) {
+  const target = JSON.stringify(d);
+  for (let i = 0; i < retries; i++) {
+    await postToGAS({ action: 'set', key: k, value: target });
+    await new Promise(res => setTimeout(res, 600 + i * 400));
+    try {
+      const r = await fetch(`${GAS_URL}?action=get&key=${encodeURIComponent(k)}`);
+      const j = await r.json();
+      if (j && j.value === target) return true; // confirmado: el servidor tiene exactamente esto
+    } catch {}
+    console.warn(`lsSet: intento ${i+1} no confirmado, reintentando...`);
+  }
+  console.error('⚠️ No se pudo confirmar el guardado tras varios intentos:', k);
+  try { alert('⚠️ Tu voto/resultado no se pudo confirmar por un problema de conexión. Volvé a intentarlo en unos segundos.'); } catch {}
+  return false;
+}
+
+// Registro de auditoría — no se confirma con GET porque no es crítico si se pierde
+// ocasionalmente una fila de log (el dato real ya está garantizado por lsSet arriba).
+function logVote(matchId, player, tipo, campo, valorAnterior, valorNuevo) {
+  postToGAS({ action:'log', kind:'voto', matchId, tipo, campo, player,
+    valorAnterior: valorAnterior ?? null, valorNuevo: valorNuevo ?? null });
+}
+function logCorrection(matchId, player, tipo, campo, valorAnterior, valorNuevo, adminUser) {
+  postToGAS({ action:'log', kind:'correccion', matchId, tipo, campo, player,
+    valorAnterior: valorAnterior ?? null, valorNuevo: valorNuevo ?? null, user: adminUser });
 }
 
 const E0 = () => ({preds:{},results:{}});
@@ -1912,7 +1950,10 @@ function App() {
     setD(prev=>{
       const userPrev = prev.preds[id]?.[user] || {};
       const userNext = {...userPrev};
-      pairs.forEach(([k,val])=>{ userNext[k]=val; });
+      pairs.forEach(([k,val])=>{
+        if(userPrev[k]!==val) logVote(id, user, type, k, userPrev[k]??null, val);
+        userNext[k]=val;
+      });
       const newPreds = {...prev.preds,[id]:{...prev.preds[id],[user]:userNext}};
       const next = {preds:newPreds, results:prev.results};
       // lsSet uses the freshly computed state, not stale ref
