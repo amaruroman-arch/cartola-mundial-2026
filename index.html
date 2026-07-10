@@ -304,12 +304,33 @@ function resolveRef(ref, fR, eR, b3assigned, matchId) {
   }
 
   // Gan. PXX
+  // Usamos 'g' (Local/Visita) como fuente de verdad primaria, igual que getEliminatedTeams,
+  // porque cubre el caso de penales donde el marcador final (r.fin) queda empatado.
+  // Solo si el admin no ha marcado 'g' todavía, hacemos fallback a comparar goles de r.fin.
   const gn = ref && ref.match(/^Gan\. P(\d+)$/);
-  if(gn){ const id=parseInt(gn[1]),r=eR?.[id]; if(!r?.fin)return ref; const[gl,gv]=r.fin.split('-').map(Number); if(isNaN(gl)||isNaN(gv))return ref; const m=ELIM.find(x=>x[0]===id); if(!m)return ref; return gl>gv?resolveRef(m[3],fR,eR,b3assigned,id):resolveRef(m[4],fR,eR,b3assigned,id); }
+  if(gn){
+    const id=parseInt(gn[1]), r=eR?.[id];
+    const m=ELIM.find(x=>x[0]===id);
+    if(!m) return ref;
+    if(r?.g) return r.g==='L'?resolveRef(m[3],fR,eR,b3assigned,id):resolveRef(m[4],fR,eR,b3assigned,id);
+    if(!r?.fin) return ref;
+    const[gl,gv]=r.fin.split('-').map(Number);
+    if(isNaN(gl)||isNaN(gv)) return ref;
+    return gl>gv?resolveRef(m[3],fR,eR,b3assigned,id):resolveRef(m[4],fR,eR,b3assigned,id);
+  }
 
   // Perd. PXX
   const pn = ref && ref.match(/^Perd\. P(\d+)$/);
-  if(pn){ const id=parseInt(pn[1]),r=eR?.[id]; if(!r?.fin)return ref; const[gl,gv]=r.fin.split('-').map(Number); if(isNaN(gl)||isNaN(gv))return ref; const m=ELIM.find(x=>x[0]===id); if(!m)return ref; return gl>gv?resolveRef(m[4],fR,eR,b3assigned,id):resolveRef(m[3],fR,eR,b3assigned,id); }
+  if(pn){
+    const id=parseInt(pn[1]), r=eR?.[id];
+    const m=ELIM.find(x=>x[0]===id);
+    if(!m) return ref;
+    if(r?.g) return r.g==='L'?resolveRef(m[4],fR,eR,b3assigned,id):resolveRef(m[3],fR,eR,b3assigned,id);
+    if(!r?.fin) return ref;
+    const[gl,gv]=r.fin.split('-').map(Number);
+    if(isNaN(gl)||isNaN(gv)) return ref;
+    return gl>gv?resolveRef(m[4],fR,eR,b3assigned,id):resolveRef(m[3],fR,eR,b3assigned,id);
+  }
 
   return ref;
 }
