@@ -871,6 +871,7 @@ function Tabla({ fdg, elim, champ, onNavigate }) {
     // Count how many elim rounds the chosen team won
     let cvFar = 0;
     if(cv) ELIM.forEach(m=>{
+      if(m[0]===103) return; // el partido por el 3er lugar no cuenta como "avanzar más"
       const r=eR[m[0]];
       if(!r?.g) return; // need at least winner declared
       const winner=r.g==='L'?resolveRef(m[3],fR,eR,b3,m[0]):resolveRef(m[4],fR,eR,b3,m[0]);
@@ -890,24 +891,33 @@ function Tabla({ fdg, elim, champ, onNavigate }) {
     return null;
   };
 
-  // ── Campeón distinctions based on cvFar (how far team got) ──
-  // Find max cvFar among all players
-  const maxFar = Math.max(...rows.map(r=>r.cvFar));
+  // ── Campeón distinctions: SOLO importa qué tan lejos llegó el equipo elegido ──
+  // (no importa si ese equipo es o no el campeón real del mundial)
+  const cvRows = rows.filter(x=>x.cv); // jugadores que sí eligieron equipo
+  const aliveChosenTeams = new Set(cvRows.filter(x=>!x.cvElim).map(x=>x.cv.toUpperCase()));
+  // La categoría queda decidida cuando termina el torneo real, O cuando ya no
+  // puede quedar más de un equipo elegido distinto en carrera (nadie más lo puede alcanzar)
+  const champDecided = finalPlayed || aliveChosenTeams.size<=1;
+  const roundLabels = ['','Ronda 32','Octavos','Cuartos','Semifinal','Campeón'];
+  const roundLabelFor = (far) => roundLabels[Math.min(far, roundLabels.length-1)] || `${far} rondas`;
+  const maxFar = cvRows.length ? Math.max(...cvRows.map(x=>x.cvFar)) : 0;
+
   const champDistinction = (r) => {
-    if(!finalPlayed || r.cvFar===0 || maxFar===0) return null;
-    // All players whose team reached the same max round share the title
-    const winners = rows.filter(x=>x.cvFar===maxFar);
-    if(!winners.find(x=>x.p===r.p)) return null;
-    // Check if their team was champion or runner-up
-    const teamName = (r.cv||'').toUpperCase();
-    const isChamp = champTeam && (champTeam.toUpperCase().includes(teamName)||teamName.includes(champTeam.replace(/^\S+\s/,'').trim().toUpperCase()));
-    const isRunner = runnerTeam && (runnerTeam.toUpperCase().includes(teamName)||teamName.includes(runnerTeam.replace(/^\S+\s/,'').trim().toUpperCase()));
-    if(isChamp) return {icon:'🏆', text:'Campeón', color:'#F59E0B'};
-    if(isRunner) return {icon:'🥈', text:'Vicecampeón', color:'#9CA3AF'};
-    // Reached same round as the furthest — use round label
-    const roundLabels = ['','Ronda 32','Octavos','Cuartos','Semifinal','Final/3°','Campeón'];
-    const lbl = roundLabels[Math.min(r.cvFar, roundLabels.length-1)] || `${r.cvFar} rondas`;
-    return {icon:'🏅', text:lbl, color:'#F59E0B'};
+    if(!champDecided || !r.cv || r.cvFar===0 || maxFar===0) return null;
+    // 1er lugar: el/los equipo(s) que llegaron más lejos de todos los elegidos
+    if(r.cvFar===maxFar){
+      const topTier = cvRows.filter(x=>x.cvFar===maxFar);
+      if(topTier.length>1) return {icon:'🏅', text:roundLabelFor(maxFar), color:'#F59E0B'};
+      return {icon:'🏆', text:'Campeón', color:'#F59E0B'};
+    }
+    // 2° lugar: el/los equipo(s) que llegaron segundo más lejos
+    const belowMax = cvRows.filter(x=>x.cvFar<maxFar);
+    if(belowMax.length===0) return null;
+    const secondFar = Math.max(...belowMax.map(x=>x.cvFar));
+    if(secondFar===0 || r.cvFar!==secondFar) return null;
+    const secondTier = cvRows.filter(x=>x.cvFar===secondFar);
+    if(secondTier.length>1) return {icon:'🏅', text:roundLabelFor(secondFar), color:'#9CA3AF'};
+    return {icon:'🥈', text:'Vicecampeón', color:'#9CA3AF'};
   };
 
   // Position icon for the # column (always show during tournament, distinctions only at end)
@@ -1940,14 +1950,15 @@ function ReglasView() {
         e('div',null,'  🥉 3° Tabla — al tercero en puntos'),
         e('div',null,''),
         e('div',null,e('b',null,'Elección de campeón (equipo que llegó más lejos):')),
-        e('div',null,'  🏆 Campeón — al jugador cuyo equipo llegó más lejos en eliminatorias'),
-        e('div',null,'  🥈 Vicecampeón — si el equipo elegido llegó a la final pero no ganó'),
-        e('div',null,'  🏅 [Ronda] — si varios equipos llegaron igual de lejos, todos reciben distinción de esa ronda'),
+        e('div',null,'  🏆 Campeón — al jugador (o jugadores) cuyo equipo elegido llegó más lejos de todos en eliminatorias'),
+        e('div',null,'  🥈 Vicecampeón — al jugador (o jugadores) cuyo equipo elegido llegó segundo más lejos'),
+        e('div',null,'  🏅 [Ronda] — si varios equipos empatan en el 1° o 2° lugar de "más lejos", todos reciben la distinción de esa ronda en vez de Campeón/Vicecampeón'),
         e('div',null,''),
         e('div',null,e('b',null,'¿Cómo se determina "quién llegó más lejos"?')),
-        e('div',null,'  El equipo que ganó más partidos en la fase eliminatoria. Si el equipo elegido llegó a semifinal pero fue eliminado, esa es su distinción.'),
-        e('div',null,'  No importa si es el campeón mundial: si tu equipo llegó a cuartos y el de otro llegó a la final, ese otro es "Campeón".'),
-        e('div',null,'  Si dos jugadores eligieron equipos que llegaron igual de lejos (ej: ambos en semifinal), ambos reciben la distinción.'),
+        e('div',null,'  Se cuentan los partidos ganados en la fase eliminatoria (el partido por el 3er lugar no cuenta). Gana esta categoría quien eligió el equipo que ganó más rondas, sin importar si ese equipo terminó siendo o no el campeón real del mundial.'),
+        e('div',null,'  Ej: si tu equipo llegó a semifinal y perdió, y el de otro jugador llegó a la final (la haya ganado o no), ese otro jugador es "Campeón" de esta categoría — y tú serías "Vicecampeón" si nadie más llegó más lejos que tú.'),
+        e('div',null,'  La categoría queda definida apenas ya no puede quedar en carrera más de un equipo elegido distinto (aunque el mundial real todavía no termine).'),
+        e('div',null,'  Si dos o más jugadores eligieron equipos que llegaron igual de lejos, todos empatan y reciben la distinción de esa ronda (🏅) en vez de Campeón/Vicecampeón.'),
         e('div',null,''),
         e('div',null,e('b',null,'Combinación de distinciones:')),
         e('div',null,'  Si un jugador gana en ambas categorías, se muestran ambas. Ej: "🏆 1° Tabla · 🥈 Vicecampeón"'),
