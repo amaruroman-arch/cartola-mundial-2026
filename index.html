@@ -992,6 +992,125 @@ function Tabla({ fdg, elim, champ, onNavigate }) {
   );
 }
 
+// ── PODIO: resumen visual de ambas competencias ─────────────────────────────
+function PodioStep({ icon, label, subLabel, players, colorHex, heightPx, tied }) {
+  const e = React.createElement;
+  return e('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',flex:1,minWidth:0}},
+    e('div',{style:{fontSize:22,lineHeight:1}},icon),
+    e('div',{style:{marginTop:4,textAlign:'center',minHeight:36,display:'flex',flexDirection:'column',justifyContent:'flex-end',gap:2}},
+      players.length>0
+        ? players.map(pl=>e('div',{key:pl.p,style:{fontWeight:700,fontSize:13,color:pl.color,fontFamily:'Georgia,serif',lineHeight:1.25}},pl.p))
+        : e('div',{style:{fontSize:11,color:'#94a3b8',fontStyle:'italic'}},'— sin definir —')
+    ),
+    subLabel&&e('div',{style:{fontSize:10,color:'#64748b',marginTop:2,textAlign:'center',lineHeight:1.3}},subLabel),
+    e('div',{style:{
+      width:'100%',maxWidth:96,height:heightPx,marginTop:8,borderRadius:'8px 8px 0 0',
+      background:`linear-gradient(180deg, ${colorHex}, ${colorHex}CC)`,
+      display:'flex',alignItems:'flex-start',justifyContent:'center',paddingTop:6,
+      boxShadow:'0 2px 6px rgba(0,0,0,.12)'
+    }},
+      e('span',{style:{fontFamily:'Georgia,serif',fontWeight:700,fontSize:15,color:'#0F1C3F'}},label)
+    )
+  );
+}
+
+function PodioCard({ title, icon, children }) {
+  const e = React.createElement;
+  return e('div',{style:{background:'#fff',border:'1px solid #e2e8f0',borderRadius:14,padding:'14px 12px 10px',marginBottom:14}},
+    e('div',{style:{display:'flex',alignItems:'center',gap:7,marginBottom:4}},
+      e('span',{style:{fontSize:16}},icon),
+      e('span',{style:{fontFamily:'Georgia,serif',fontWeight:700,fontSize:15,color:'#0F1C3F'}},title)
+    ),
+    children
+  );
+}
+
+function PodioView({ fdg, elim, champ }) {
+  const e = React.createElement;
+  const eliminated = getEliminatedTeams(fdg.results, elim.results);
+  const fR = fdg.results||{}, eR = elim.results||{}, b3 = getB3Slots(eR);
+  const finalPlayed = !!(eR[104]?.g || eR[104]?.fin);
+
+  const rows = PLAYERS.map(p=>{
+    let fP=0,eP=0;
+    FDG.forEach(m=>{fP+=scoreMatch(fdg.preds?.[m[0]]?.[p],fdg.results?.[m[0]],false);});
+    ELIM.forEach(m=>{eP+=scoreMatch(elim.preds?.[m[0]]?.[p],elim.results?.[m[0]],true);});
+    const cv=champ.votes?.[p];
+    const cvElim = cv && eliminated.has(cv);
+    let cvFar=0;
+    if(cv) ELIM.forEach(m=>{
+      if(m[0]===103) return; // el 3er lugar no cuenta como "avanzar más"
+      const r=eR[m[0]];
+      if(!r?.g) return;
+      const winner=r.g==='L'?resolveRef(m[3],fR,eR,b3,m[0]):resolveRef(m[4],fR,eR,b3,m[0]);
+      const wName=winner.replace(/^\S+\s/,'').trim().toUpperCase();
+      const cvUp=cv.toUpperCase();
+      if(wName===cvUp||winner.toUpperCase()===cvUp||cvUp.includes(wName)||wName.includes(cvUp)) cvFar++;
+    });
+    return {p,total:fP+eP,cv,cvElim,cvFar};
+  });
+
+  // ── Tabla general: top 3 por puntos ──
+  const byPoints = [...rows].sort((a,b)=>b.total-a.total);
+  const tableSteps = [0,1,2].map(i=>{
+    const r = byPoints[i];
+    const hasScore = r && r.total>0;
+    return {
+      icon: ['🏆','🥈','🥉'][i],
+      height: [78,60,44][i],
+      color: ['#F59E0B','#9CA3AF','#CD7F32'][i],
+      players: (hasScore ? [{p:r.p, color:PC[r.p]}] : []),
+      sub: hasScore ? `${r.total} pts` : null
+    };
+  });
+
+  // ── Elección de campeón: Campeón / Vicecampeón / 3er lugar por qué tan lejos llegó cada equipo ──
+  const cvRows = rows.filter(x=>x.cv);
+  const aliveChosenTeams = new Set(cvRows.filter(x=>!x.cvElim).map(x=>x.cv.toUpperCase()));
+  const champDecided = finalPlayed || aliveChosenTeams.size<=1;
+  const roundLabels = ['','Ronda 32','Octavos','Cuartos','Semifinal','Campeón'];
+  const roundLabelFor = far => roundLabels[Math.min(far, roundLabels.length-1)] || `${far} rondas`;
+  const farValues = [...new Set(cvRows.map(x=>x.cvFar))].filter(f=>f>0).sort((a,b)=>b-a);
+
+  const champSteps = [0,1,2].map(i=>{
+    const far = champDecided ? farValues[i] : undefined;
+    if(far===undefined) return {icon:['🏆','🥈','🥉'][i], height:[78,60,44][i], color:['#F59E0B','#9CA3AF','#CD7F32'][i], players:[], sub:null};
+    const inTier = cvRows.filter(x=>x.cvFar===far);
+    const teamsInTier = [...new Set(inTier.map(x=>x.cv.toUpperCase()))];
+    const tied = teamsInTier.length>1;
+    const tierLabel = tied ? roundLabelFor(far) : ['Campeón','Vicecampeón','3er lugar'][i];
+    return {
+      icon: tied?'🏅':['🏆','🥈','🥉'][i],
+      height:[78,60,44][i],
+      color: tied?'#F59E0B':['#F59E0B','#9CA3AF','#CD7F32'][i],
+      players: inTier.map(x=>({p:x.p, color:PC[x.p]})),
+      sub: tierLabel + (inTier[0]?` · ${inTier[0].cv}`:'') + (tied?' (empate)':'')
+    };
+  });
+
+  const podiumRow = (steps) => e('div',{style:{display:'flex',alignItems:'flex-end',justifyContent:'center',gap:8,marginTop:4}},
+    e(PodioStep,{heightPx:steps[1].height,icon:steps[1].icon,label:'2°',subLabel:steps[1].sub,players:steps[1].players,colorHex:steps[1].color}),
+    e(PodioStep,{heightPx:steps[0].height,icon:steps[0].icon,label:'1°',subLabel:steps[0].sub,players:steps[0].players,colorHex:steps[0].color}),
+    e(PodioStep,{heightPx:steps[2].height,icon:steps[2].icon,label:'3°',subLabel:steps[2].sub,players:steps[2].players,colorHex:steps[2].color})
+  );
+
+  return e('div',{className:'view'},
+    e('div',{className:'sec'},'🥇 Podio'),
+    e(PodioCard,{title:'Tabla general', icon:'🏆'},
+      podiumRow(tableSteps),
+      !finalPlayed&&e('div',{className:'hint'},'Posiciones actuales — se confirman al terminar el mundial.')
+    ),
+    e(PodioCard,{title:'Elección de campeón', icon:'👕'},
+      champDecided
+        ? podiumRow(champSteps)
+        : e('div',{style:{padding:'10px 4px',fontSize:12,color:'#64748b',lineHeight:1.6}},
+            '⏳ Todavía no se define. Se decide apenas ya no pueda quedar más de un equipo elegido distinto en carrera — no hace falta esperar a que termine el mundial real.'
+          ),
+      champDecided&&e('div',{className:'hint'},'No importa si el equipo elegido es o no el campeón real del mundial — gana quien llegó más lejos entre los elegidos.')
+    )
+  );
+}
+
 function GruposView({ user, isAdmin, fdg, onVote, onResult, onAdminCorrect }) {
   const [grp,setGrp]=React.useState('ALL');
   const ms=grp==='ALL'?FDG:FDG.filter(m=>m[1]===grp);
@@ -1997,6 +2116,13 @@ function App() {
   useEffect(()=>{fdgRef.current=fdg;},[fdg]);
   useEffect(()=>{elimRef.current=elim;},[elim]);
   useEffect(()=>{champRef.current=champ;},[champ]);
+  // La Tabla general sigue siendo lo primero que se ve. Recién cuando el
+  // mundial real termina (se registra el resultado de la Final), si el
+  // usuario seguía en la vista por defecto ('tabla'), lo pasamos al Podio.
+  useEffect(()=>{
+    const finalDone = !!(elim.results?.[104]?.g || elim.results?.[104]?.fin);
+    if(finalDone && tab==='tabla') setTab('podio');
+  },[elim.results?.[104]?.g, elim.results?.[104]?.fin]);
 
   // Combina lo recién obtenido con lo que ya teníamos, conservando la MISMA
   // referencia de 'preds' o 'results' cuando no cambiaron. Así, todo lo que
@@ -2137,7 +2263,7 @@ function App() {
     );
   }
 
-  const tabs=[{id:'tabla',l:'🏆 Tabla'},{id:'grupos',l:'⚽ Grupos'},{id:'pos',l:'📈 Posiciones'},{id:'elim',l:'🏟️ Elim.'},{id:'camp',l:'🏆 Campeón'},{id:'reglas',l:'📋 Reglas'},{id:'estadisticas',l:'📊 Estadísticas'}];
+  const tabs=[{id:'podio',l:'🥇 Podio'},{id:'tabla',l:'🏆 Tabla'},{id:'grupos',l:'⚽ Grupos'},{id:'pos',l:'📈 Posiciones'},{id:'elim',l:'🏟️ Elim.'},{id:'camp',l:'🏆 Campeón'},{id:'reglas',l:'📋 Reglas'},{id:'estadisticas',l:'📊 Estadísticas'}];
   const e=React.createElement;
 
   return e(React.Fragment,null,
@@ -2158,6 +2284,7 @@ function App() {
       )
     ),
     e('div',{className:'nav'},...tabs.map(t=>e('button',{key:t.id,className:`ntab${tab===t.id?' on':''}`,onClick:()=>setTab(t.id)},t.l))),
+    tab==='podio'&&e(PodioView,{fdg,elim,champ}),
     tab==='tabla'&&e(Tabla,{fdg,elim,champ,onNavigate}),
     tab==='grupos'&&e(GruposView,{user,isAdmin,fdg,onVote:vote,onResult:result,onAdminCorrect:adminCorrect}),
     tab==='pos'&&e(PosicionesView,{fdg}),
