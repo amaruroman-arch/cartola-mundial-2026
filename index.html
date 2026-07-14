@@ -906,8 +906,8 @@ function Tabla({ fdg, elim, champ, onNavigate }) {
     if(!champDecided || !r.cv || r.cvFar===0 || maxFar===0) return null;
     // 1er lugar: el/los equipo(s) que llegaron más lejos de todos los elegidos
     if(r.cvFar===maxFar){
-      const topTier = cvRows.filter(x=>x.cvFar===maxFar);
-      if(topTier.length>1) return {icon:'🏅', text:roundLabelFor(maxFar), color:'#F59E0B'};
+      const topTeams = new Set(cvRows.filter(x=>x.cvFar===maxFar).map(x=>x.cv.toUpperCase()));
+      if(topTeams.size>1) return {icon:'🏅', text:roundLabelFor(maxFar), color:'#F59E0B'};
       return {icon:'🏆', text:'Campeón', color:'#F59E0B'};
     }
     // 2° lugar: el/los equipo(s) que llegaron segundo más lejos
@@ -915,8 +915,8 @@ function Tabla({ fdg, elim, champ, onNavigate }) {
     if(belowMax.length===0) return null;
     const secondFar = Math.max(...belowMax.map(x=>x.cvFar));
     if(secondFar===0 || r.cvFar!==secondFar) return null;
-    const secondTier = cvRows.filter(x=>x.cvFar===secondFar);
-    if(secondTier.length>1) return {icon:'🏅', text:roundLabelFor(secondFar), color:'#9CA3AF'};
+    const secondTeams = new Set(cvRows.filter(x=>x.cvFar===secondFar).map(x=>x.cv.toUpperCase()));
+    if(secondTeams.size>1) return {icon:'🏅', text:roundLabelFor(secondFar), color:'#9CA3AF'};
     return {icon:'🥈', text:'Vicecampeón', color:'#9CA3AF'};
   };
 
